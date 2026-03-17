@@ -1,0 +1,282 @@
+---
+title: 'tsserver'
+description: 'The TypeScript language server that powers IDE features like completions, go-to-definition, and error highlighting.'
+keywords: ['tsserver', 'language server', 'IDE', 'editor integration', 'protocol']
+---
+
+`tsserver` is the TypeScript language server. It runs as a long-lived background process and exposes the TypeScript language service over a JSON-based stdio protocol. Editors and IDE extensions communicate with tsserver to provide features like:
+
+- Code completions and IntelliSense
+- Go-to-definition and find-references
+- Rename symbol
+- Inline error diagnostics
+- Quick info (hover)
+- Code formatting
+- Refactoring
+
+<Note>
+Most users never interact with tsserver directly. Visual Studio Code, Neovim, Emacs, and other editors launch and manage it automatically through extensions such as `typescript-language-server` or the built-in VS Code TypeScript support.
+</Note>
+
+## Starting tsserver
+
+```bash
+# Run the bundled tsserver directly
+tsserver
+
+# Or invoke it through Node.js explicitly
+node ./node_modules/typescript/lib/tsserver.js
+
+# With logging enabled
+tsserver --logFile /tmp/tsserver.log --logVerbosity verbose
+```
+
+tsserver reads from `stdin` and writes to `stdout`. It stays running until stdin closes or the process receives a termination signal.
+
+## Communication protocol
+
+tsserver uses a line-delimited JSON protocol. Every message is a UTF-8 JSON object followed by a newline. The format mirrors the [tsserver protocol](https://github.com/microsoft/TypeScript/blob/main/src/server/protocol.ts) defined in the TypeScript source.
+
+### Request format
+
+Requests from the client to tsserver look like:
+
+```json
+{"seq":1,"type":"request","command":"open","arguments":{"file":"/project/src/index.ts"}}
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `seq` | number | Monotonically increasing sequence number. |
+| `type` | `"request"` | Always `"request"` for client-to-server messages. |
+| `command` | string | The command name (see below). |
+| `arguments` | object | Command-specific arguments. |
+
+### Response format
+
+tsserver replies with:
+
+```json
+{"seq":0,"type":"response","command":"open","request_seq":1,"success":true}
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `seq` | number | Server sequence number. |
+| `type` | `"response"` | Always `"response"` for server replies. |
+| `command` | string | Echoes the request command. |
+| `request_seq` | number | Echoes the client `seq`. |
+| `success` | boolean | Whether the command succeeded. |
+| `body` | any | Command result data (present when `success` is `true`). |
+| `message` | string | Error message (present when `success` is `false`). |
+
+### Event format
+
+tsserver also sends unsolicited events (for example, when background diagnostics complete):
+
+```json
+{"seq":2,"type":"event","event":"syntaxDiag","body":{"file":"/project/src/index.ts","diagnostics":[]}}
+```
+
+## Common commands
+
+<AccordionGroup>
+  <Accordion title="open — open a file">
+    Registers a file with the project service. You must open a file before using most other commands on it.
+
+    ```json
+    {"seq":1,"type":"request","command":"open","arguments":{"file":"/project/src/index.ts"}}
+    ```
+  </Accordion>
+
+  <Accordion title="close — close a file">
+    Unregisters a file, releasing associated resources.
+
+    ```json
+    {"seq":2,"type":"request","command":"close","arguments":{"file":"/project/src/index.ts"}}
+    ```
+  </Accordion>
+
+  <Accordion title="geterr — request diagnostics">
+    Triggers background type-checking. Results arrive as `syntaxDiag`, `semanticDiag`, and `suggestionDiag` events.
+
+    ```json
+    {"seq":3,"type":"request","command":"geterr","arguments":{"files":["/project/src/index.ts"],"delay":0}}
+    ```
+  </Accordion>
+
+  <Accordion title="completions — code completions">
+    Returns completion candidates at a given position.
+
+    ```json
+    {
+      "seq": 4,
+      "type": "request",
+      "command": "completions",
+      "arguments": {
+        "file": "/project/src/index.ts",
+        "line": 10,
+        "offset": 15
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="definition — go to definition">
+    Returns the location where a symbol is defined.
+
+    ```json
+    {
+      "seq": 5,
+      "type": "request",
+      "command": "definition",
+      "arguments": {
+        "file": "/project/src/index.ts",
+        "line": 10,
+        "offset": 5
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="references — find references">
+    Returns all locations that reference a symbol.
+
+    ```json
+    {
+      "seq": 6,
+      "type": "request",
+      "command": "references",
+      "arguments": {
+        "file": "/project/src/index.ts",
+        "line": 10,
+        "offset": 5
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="rename — rename a symbol">
+    Returns all locations that must be updated when renaming a symbol.
+
+    ```json
+    {
+      "seq": 7,
+      "type": "request",
+      "command": "rename",
+      "arguments": {
+        "file": "/project/src/index.ts",
+        "line": 10,
+        "offset": 5
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="format — format a range">
+    Returns text edits to apply formatting rules to a range of a file.
+
+    ```json
+    {
+      "seq": 8,
+      "type": "request",
+      "command": "format",
+      "arguments": {
+        "file": "/project/src/index.ts",
+        "line": 1,
+        "offset": 1,
+        "endLine": 50,
+        "endOffset": 1
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="quickinfo — hover information">
+    Returns the type and documentation for the symbol at a position.
+
+    ```json
+    {
+      "seq": 9,
+      "type": "request",
+      "command": "quickinfo",
+      "arguments": {
+        "file": "/project/src/index.ts",
+        "line": 10,
+        "offset": 5
+      }
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## CLI flags
+
+<ParamField path="--logFile" type="string">
+  Path to a file where tsserver writes its log. Without this flag, logging is disabled.
+
+  You can also configure logging through the `TSS_LOG` environment variable using the format:
+  `TSS_LOG="-level verbose -file /tmp/tsserver.log"`
+</ParamField>
+
+<ParamField path="--logVerbosity" type="string" default="normal" placeholder="off | terse | normal | requestTime | verbose">
+  Controls how much detail appears in the log file. `verbose` includes the full content of every request and response.
+</ParamField>
+
+<ParamField path="--locale" type="string">
+  Override the language used for diagnostic messages (e.g. `--locale de`). Defaults to the platform locale.
+</ParamField>
+
+<ParamField path="--serverMode" type="string" placeholder="semantic | partialSemantic | syntactic">
+  Restrict the language service to a subset of features.
+  - `semantic` — full type-checking (default)
+  - `partialSemantic` — partial semantic features
+  - `syntactic` — syntax-only, no type information
+</ParamField>
+
+<ParamField path="--useSingleInferredProject" type="boolean" default="false">
+  Place all open files that are not part of a `tsconfig.json` project into a single inferred project.
+</ParamField>
+
+<ParamField path="--useInferredProjectPerProjectRoot" type="boolean" default="false">
+  Create a separate inferred project for each project root instead of sharing one.
+</ParamField>
+
+<ParamField path="--disableAutomaticTypingAcquisition" type="boolean" default="false">
+  Disable the automatic download of `@types` packages for JavaScript projects.
+</ParamField>
+
+<ParamField path="--cancellationPipeName" type="string">
+  Named pipe used by the client to signal request cancellation.
+</ParamField>
+
+<ParamField path="--globalPlugins" type="string">
+  Comma-separated list of global language service plugins to load.
+</ParamField>
+
+## Logging via environment variable
+
+You can enable tsserver logging without passing flags by setting the `TSS_LOG` environment variable:
+
+```bash
+TSS_LOG="-level verbose -file /tmp/tsserver.log" tsserver
+```
+
+Supported sub-options inside `TSS_LOG`:
+
+| Sub-option | Description |
+|---|---|
+| `-file <path>` | Log file path. Supports `PID` as a placeholder (replaced with the process ID). |
+| `-level <level>` | Log verbosity: `off`, `terse`, `normal`, `requestTime`, `verbose`. |
+| `-traceToConsole true` | Mirror log output to stderr. |
+| `-logToFile true` | Enable file logging explicitly. |
+
+## Editor integration
+
+Editors typically do not invoke `tsserver` directly. They use a wrapper like [`typescript-language-server`](https://github.com/typescript-language-server/typescript-language-server), which translates the [Language Server Protocol (LSP)](https://microsoft.github.io/language-server-protocol/) that editors speak into tsserver's native protocol.
+
+```
+Editor  <-- LSP -->  typescript-language-server  <-- tsserver protocol -->  tsserver
+```
+
+VS Code's built-in TypeScript support bypasses this layer and communicates with tsserver directly using its native protocol.

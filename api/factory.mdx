@@ -1,0 +1,330 @@
+---
+title: 'Node factory'
+description: 'Create and update TypeScript AST nodes programmatically using the NodeFactory interface available via ts.factory or a TransformationContext.'
+keywords: ['NodeFactory', 'AST', 'ts.factory', 'createIdentifier', 'createCallExpression', 'transformer']
+---
+
+The `NodeFactory` interface provides methods to create every kind of TypeScript AST node. Use it when writing compiler transformers, custom emit plugins, or any tooling that needs to construct or rewrite a syntax tree.
+
+## Obtaining the factory
+
+There are two ways to get a `NodeFactory`:
+
+<CodeGroup>
+
+```typescript Global factory
+import * as ts from 'typescript';
+
+// Available on the ts namespace directly
+const factory = ts.factory;
+```
+
+```typescript Transformer context
+import * as ts from 'typescript';
+
+function myTransformer(program: ts.Program): ts.TransformerFactory<ts.SourceFile> {
+    return (context: ts.TransformationContext) => {
+        // Use context.factory inside transformers — it is aware of the
+        // emit resolver and produces nodes that round-trip correctly.
+        const { factory } = context;
+        return (sourceFile) => ts.visitEachChild(sourceFile, visit, context);
+
+        function visit(node: ts.Node): ts.Node {
+            // ...
+            return node;
+        }
+    };
+}
+```
+
+</CodeGroup>
+
+<Tip>
+  Prefer `context.factory` inside transformers. The global `ts.factory` works fine for standalone code generation, but `context.factory` is aware of the emit resolver and produces nodes that interact correctly with the transformation pipeline.
+</Tip>
+
+## Literals
+
+```typescript
+factory.createNumericLiteral(value: string | number, numericLiteralFlags?: TokenFlags): NumericLiteral
+factory.createStringLiteral(text: string, isSingleQuote?: boolean): StringLiteral
+factory.createStringLiteralFromNode(sourceNode: PropertyNameLiteral | PrivateIdentifier, isSingleQuote?: boolean): StringLiteral
+factory.createBigIntLiteral(value: string | PseudoBigInt): BigIntLiteral
+factory.createRegularExpressionLiteral(text: string): RegularExpressionLiteral
+```
+
+```typescript
+const forty2 = factory.createNumericLiteral(42);
+const hello = factory.createStringLiteral('hello');
+const singleQuoted = factory.createStringLiteral('hi', /*isSingleQuote*/ true);
+```
+
+## Identifiers
+
+```typescript
+factory.createIdentifier(text: string): Identifier
+factory.createTempVariable(recordTempVariable: ((node: Identifier) => void) | undefined, reservedInNestedScopes?: boolean): Identifier
+factory.createUniqueName(text: string, flags?: GeneratedIdentifierFlags): Identifier
+factory.createPrivateIdentifier(text: string): PrivateIdentifier
+```
+
+```typescript
+const id = factory.createIdentifier('myVariable');
+const priv = factory.createPrivateIdentifier('#secret');
+```
+
+## Type references
+
+```typescript
+factory.createTypeReferenceNode(
+    typeName: string | EntityName,
+    typeArguments?: readonly TypeNode[],
+): TypeReferenceNode
+```
+
+```typescript
+// Produces: Promise<string>
+const promiseOfString = factory.createTypeReferenceNode('Promise', [
+    factory.createKeywordTypeNode(ts.SyntaxKind.StringKeyword),
+]);
+```
+
+## Expressions
+
+### `createCallExpression`
+
+```typescript
+factory.createCallExpression(
+    expression: Expression,
+    typeArguments: readonly TypeNode[] | undefined,
+    argumentsArray: readonly Expression[] | undefined,
+): CallExpression
+```
+
+```typescript
+// Produces: console.log('hello')
+const call = factory.createCallExpression(
+    factory.createPropertyAccessExpression(
+        factory.createIdentifier('console'),
+        factory.createIdentifier('log'),
+    ),
+    undefined,
+    [factory.createStringLiteral('hello')],
+);
+```
+
+### `createArrowFunction`
+
+```typescript
+factory.createArrowFunction(
+    modifiers: readonly Modifier[] | undefined,
+    typeParameters: readonly TypeParameterDeclaration[] | undefined,
+    parameters: readonly ParameterDeclaration[],
+    type: TypeNode | undefined,
+    equalsGreaterThanToken: EqualsGreaterThanToken | undefined,
+    body: ConciseBody,
+): ArrowFunction
+```
+
+```typescript
+// Produces: (x: number) => x * 2
+const arrowFn = factory.createArrowFunction(
+    undefined,
+    undefined,
+    [
+        factory.createParameterDeclaration(
+            undefined, undefined,
+            factory.createIdentifier('x'),
+            undefined,
+            factory.createKeywordTypeNode(ts.SyntaxKind.NumberKeyword),
+            undefined,
+        ),
+    ],
+    undefined,
+    factory.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
+    factory.createBinaryExpression(
+        factory.createIdentifier('x'),
+        factory.createToken(ts.SyntaxKind.AsteriskToken),
+        factory.createNumericLiteral(2),
+    ),
+);
+```
+
+### `createObjectLiteralExpression`
+
+```typescript
+factory.createObjectLiteralExpression(
+    properties?: readonly ObjectLiteralElementLike[],
+    multiLine?: boolean,
+): ObjectLiteralExpression
+```
+
+```typescript
+// Produces: { key: 'value' }
+const obj = factory.createObjectLiteralExpression(
+    [
+        factory.createPropertyAssignment(
+            factory.createIdentifier('key'),
+            factory.createStringLiteral('value'),
+        ),
+    ],
+    /*multiLine*/ true,
+);
+```
+
+### `createPropertyAssignment`
+
+```typescript
+factory.createPropertyAssignment(
+    name: string | PropertyName,
+    initializer: Expression,
+): PropertyAssignment
+```
+
+## Declarations
+
+### `createVariableDeclaration` and `createVariableStatement`
+
+```typescript
+factory.createVariableDeclaration(
+    name: string | BindingName,
+    exclamationToken?: ExclamationToken,
+    type?: TypeNode,
+    initializer?: Expression,
+): VariableDeclaration
+
+factory.createVariableDeclarationList(
+    declarations: readonly VariableDeclaration[],
+    flags?: NodeFlags,
+): VariableDeclarationList
+
+factory.createVariableStatement(
+    modifiers: readonly ModifierLike[] | undefined,
+    declarationList: VariableDeclarationList | readonly VariableDeclaration[],
+): VariableStatement
+```
+
+```typescript
+// Produces: const greeting: string = 'hello';
+const stmt = factory.createVariableStatement(
+    undefined,
+    factory.createVariableDeclarationList(
+        [
+            factory.createVariableDeclaration(
+                'greeting',
+                undefined,
+                factory.createKeywordTypeNode(ts.SyntaxKind.StringKeyword),
+                factory.createStringLiteral('hello'),
+            ),
+        ],
+        ts.NodeFlags.Const,
+    ),
+);
+```
+
+### `createFunctionDeclaration`
+
+```typescript
+factory.createFunctionDeclaration(
+    modifiers: readonly ModifierLike[] | undefined,
+    asteriskToken: AsteriskToken | undefined,
+    name: string | Identifier | undefined,
+    typeParameters: readonly TypeParameterDeclaration[] | undefined,
+    parameters: readonly ParameterDeclaration[],
+    type: TypeNode | undefined,
+    body: Block | undefined,
+): FunctionDeclaration
+```
+
+### `createImportDeclaration`
+
+```typescript
+factory.createImportDeclaration(
+    modifiers: readonly ModifierLike[] | undefined,
+    importClause: ImportClause | undefined,
+    moduleSpecifier: Expression,
+    attributes?: ImportAttributes,
+): ImportDeclaration
+```
+
+### `createExportDeclaration`
+
+```typescript
+factory.createExportDeclaration(
+    modifiers: readonly ModifierLike[] | undefined,
+    isTypeOnly: boolean,
+    exportClause: NamedExportBindings | undefined,
+    moduleSpecifier?: Expression,
+    attributes?: ImportAttributes,
+): ExportDeclaration
+```
+
+## Updating existing nodes
+
+Every `create*` method has a corresponding `update*` variant that takes the original node as its first argument and returns a new node with only the changed fields. Using `update*` preserves source positions and attached JSDoc for nodes you don't change.
+
+```typescript
+// Example: update the arguments of an existing call expression
+function doubleArgs(node: ts.CallExpression, factory: ts.NodeFactory): ts.CallExpression {
+    return factory.updateCallExpression(
+        node,
+        node.expression,
+        node.typeArguments,
+        [
+            ...node.arguments,
+            factory.createStringLiteral('extra'),
+        ],
+    );
+}
+```
+
+## `NodeFlags` for variable declarations
+
+```typescript
+nodeFlagsConst  = ts.NodeFlags.Const  // const
+nodeFlagsLet    = ts.NodeFlags.Let    // let
+// No flag          = var
+```
+
+## Example: transformer that wraps console.log calls
+
+```typescript
+import * as ts from 'typescript';
+
+function wrapConsoleLog(program: ts.Program): ts.TransformerFactory<ts.SourceFile> {
+    return (context) => {
+        const { factory } = context;
+
+        function visit(node: ts.Node): ts.Node {
+            // Detect console.log(...args)
+            if (
+                ts.isCallExpression(node) &&
+                ts.isPropertyAccessExpression(node.expression) &&
+                ts.isIdentifier(node.expression.expression) &&
+                node.expression.expression.text === 'console' &&
+                node.expression.name.text === 'log'
+            ) {
+                // Wrap: console.log('[LOG]', ...args)
+                return factory.updateCallExpression(
+                    node,
+                    node.expression,
+                    node.typeArguments,
+                    [
+                        factory.createStringLiteral('[LOG]'),
+                        ...node.arguments,
+                    ],
+                );
+            }
+            return ts.visitEachChild(node, visit, context);
+        }
+
+        return (sourceFile) => ts.visitEachChild(sourceFile, visit, context);
+    };
+}
+
+// Pass the transformer to emit
+const program = ts.createProgram(['index.ts'], {});
+program.emit(undefined, undefined, undefined, false, {
+    before: [wrapConsoleLog(program)],
+});
+```

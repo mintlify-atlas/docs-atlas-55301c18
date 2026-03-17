@@ -1,0 +1,268 @@
+---
+title: 'Module resolution API'
+description: 'Resolve module names and type reference directives programmatically using resolveModuleName, createModuleResolutionCache, and related utilities.'
+keywords: ['module resolution', 'resolveModuleName', 'ModuleResolutionCache', 'ModuleResolutionHost', 'node16', 'bundler']
+---
+
+The module resolution API lets you replicate or extend TypeScript's own module resolution logic. Use it to build custom hosts, validate import paths, or pre-warm resolution caches.
+
+## `resolveModuleName`
+
+Resolves a single module name as TypeScript would during compilation.
+
+```typescript
+function resolveModuleName(
+    moduleName: string,
+    containingFile: string,
+    compilerOptions: CompilerOptions,
+    host: ModuleResolutionHost,
+    cache?: ModuleResolutionCache,
+    redirectedReference?: ResolvedProjectReference,
+    resolutionMode?: ResolutionMode,
+): ResolvedModuleWithFailedLookupLocations
+```
+
+<ResponseField name="moduleName" type="string" required>
+  The module specifier as written in the source file, for example `"./utils"` or `"lodash"`.
+</ResponseField>
+
+<ResponseField name="containingFile" type="string" required>
+  Absolute path to the file that contains the import.
+</ResponseField>
+
+<ResponseField name="compilerOptions" type="CompilerOptions" required>
+  Compiler options that determine which resolution algorithm to use.
+</ResponseField>
+
+<ResponseField name="host" type="ModuleResolutionHost" required>
+  Host callbacks for file system access. See [`ModuleResolutionHost`](#moduleresolutionhost).
+</ResponseField>
+
+<ResponseField name="cache" type="ModuleResolutionCache">
+  An optional cache. If provided, previously resolved results are returned directly. Create one with `createModuleResolutionCache`.
+</ResponseField>
+
+<ResponseField name="redirectedReference" type="ResolvedProjectReference">
+  When resolving inside a project reference, pass the reference here so the correct `compilerOptions` of the referenced project are used.
+</ResponseField>
+
+<ResponseField name="resolutionMode" type="ResolutionMode">
+  Override the module kind for this specific resolution. Relevant for `node16`/`nodenext` where ESM and CJS use different resolution rules.
+</ResponseField>
+
+## `resolveModuleNameFromCache`
+
+Looks up a previously cached resolution result without performing a fresh resolution.
+
+```typescript
+function resolveModuleNameFromCache(
+    moduleName: string,
+    containingFile: string,
+    cache: ModuleResolutionCache,
+    mode?: ResolutionMode,
+): ResolvedModuleWithFailedLookupLocations | undefined
+```
+
+Returns `undefined` when the module is not in the cache.
+
+## `createModuleResolutionCache`
+
+Creates a cache that can be shared across multiple `resolveModuleName` calls.
+
+```typescript
+function createModuleResolutionCache(
+    currentDirectory: string,
+    getCanonicalFileName: (s: string) => string,
+    options?: CompilerOptions,
+    packageJsonInfoCache?: PackageJsonInfoCache,
+): ModuleResolutionCache
+```
+
+<ResponseField name="currentDirectory" type="string" required>
+  The working directory for the project.
+</ResponseField>
+
+<ResponseField name="getCanonicalFileName" type="(s: string) => string" required>
+  A function that normalises file names to a canonical form. Pass `ts.createGetCanonicalFileName(useCaseSensitiveFileNames)` for the correct behaviour.
+</ResponseField>
+
+<ResponseField name="options" type="CompilerOptions">
+  Compiler options. When provided, the cache can select the right sub-cache based on the module resolution kind.
+</ResponseField>
+
+## `resolveTypeReferenceDirective`
+
+Resolves a `/// <reference types="..." />` directive or a `types` entry in `tsconfig.json`.
+
+```typescript
+function resolveTypeReferenceDirective(
+    typeReferenceDirectiveName: string,
+    containingFile: string | undefined,
+    options: CompilerOptions,
+    host: ModuleResolutionHost,
+    redirectedReference?: ResolvedProjectReference,
+    cache?: TypeReferenceDirectiveResolutionCache,
+    resolutionMode?: ResolutionMode,
+): ResolvedTypeReferenceDirectiveWithFailedLookupLocations
+```
+
+## `ModuleResolutionHost`
+
+The minimal interface that module resolution requires from the file system.
+
+```typescript
+interface ModuleResolutionHost {
+    fileExists(fileName: string): boolean;
+    readFile(fileName: string): string | undefined;
+    trace?(s: string): void;
+    directoryExists?(directoryName: string): boolean;
+    realpath?(path: string): string;
+    getCurrentDirectory?(): string;
+    getDirectories?(path: string): string[];
+    useCaseSensitiveFileNames?: boolean | (() => boolean);
+}
+```
+
+<ResponseField name="fileExists" type="(fileName: string) => boolean" required>
+  Returns `true` if the file exists on disk.
+</ResponseField>
+
+<ResponseField name="readFile" type="(fileName: string) => string | undefined" required>
+  Reads a file's content. Used to read `package.json` during resolution.
+</ResponseField>
+
+<ResponseField name="directoryExists" type="(directoryName: string) => boolean">
+  Used to skip directory probes when a directory does not exist.
+</ResponseField>
+
+<ResponseField name="realpath" type="(path: string) => string">
+  Resolves symbolic links. Required for correct behaviour with monorepo setups that use symlinks.
+</ResponseField>
+
+<ResponseField name="getDirectories" type="(path: string) => string[]">
+  Lists the immediate subdirectories of a directory.
+</ResponseField>
+
+## `ResolvedModule`
+
+```typescript
+interface ResolvedModule {
+    resolvedFileName: string;
+    isExternalLibraryImport?: boolean;
+    resolvedUsingTsExtension?: boolean;
+}
+```
+
+<ResponseField name="resolvedFileName" type="string">
+  Absolute path to the resolved file.
+</ResponseField>
+
+<ResponseField name="isExternalLibraryImport" type="boolean">
+  `true` when the resolved file comes from `node_modules`.
+</ResponseField>
+
+<ResponseField name="resolvedUsingTsExtension" type="boolean">
+  `true` when the original import specifier used a `.ts` extension directly (an error when emit is enabled).
+</ResponseField>
+
+The resolved module is returned inside `ResolvedModuleWithFailedLookupLocations`:
+
+```typescript
+interface ResolvedModuleWithFailedLookupLocations {
+    readonly resolvedModule: ResolvedModuleFull | undefined;
+    // failedLookupLocations and affectingLocations are internal
+}
+```
+
+## `ResolvedTypeReferenceDirective`
+
+```typescript
+interface ResolvedTypeReferenceDirective {
+    primary: boolean;
+    resolvedFileName: string | undefined;
+    packageId?: PackageId;
+    isExternalLibraryImport?: boolean;
+}
+```
+
+<ResponseField name="primary" type="boolean">
+  `true` when the `.d.ts` file was found via a primary lookup location (a `typeRoots` entry).
+</ResponseField>
+
+<ResponseField name="resolvedFileName" type="string | undefined">
+  Absolute path to the resolved `.d.ts` file, or `undefined` when resolution failed.
+</ResponseField>
+
+## `ModuleResolutionKind`
+
+```typescript
+enum ModuleResolutionKind {
+    Classic  = 1,   // @deprecated — TypeScript-only non-Node resolution
+    Node10   = 2,   // @deprecated — traditional Node.js CJS resolution (also NodeJs)
+    Node16   = 3,   // Node.js 16+ with ESM/CJS duality
+    NodeNext = 99,  // Alias for the latest Node resolution target
+    Bundler  = 100, // For bundler environments (Vite, webpack, etc.)
+}
+```
+
+<Warning>
+  `Classic` and `Node10` (formerly `NodeJs`) are deprecated. Use `Node16`, `NodeNext`, or `Bundler` for new projects.
+</Warning>
+
+## Example: custom module resolution
+
+```typescript
+import * as ts from 'typescript';
+import * as fs from 'fs';
+import * as path from 'path';
+
+const compilerOptions: ts.CompilerOptions = {
+    moduleResolution: ts.ModuleResolutionKind.Bundler,
+    target: ts.ScriptTarget.ES2020,
+};
+
+const resolutionHost: ts.ModuleResolutionHost = {
+    fileExists: (fileName) => fs.existsSync(fileName),
+    readFile: (fileName) => {
+        try { return fs.readFileSync(fileName, 'utf-8'); }
+        catch { return undefined; }
+    },
+    directoryExists: (dir) => fs.existsSync(dir) && fs.statSync(dir).isDirectory(),
+    getCurrentDirectory: () => process.cwd(),
+    getDirectories: (dir) => {
+        try { return fs.readdirSync(dir).filter((f) => fs.statSync(path.join(dir, f)).isDirectory()); }
+        catch { return []; }
+    },
+    useCaseSensitiveFileNames: process.platform !== 'win32',
+};
+
+// Create a shared cache for the whole compilation
+const cache = ts.createModuleResolutionCache(
+    process.cwd(),
+    ts.createGetCanonicalFileName(true),
+    compilerOptions,
+);
+
+function resolve(moduleName: string, fromFile: string) {
+    // Check the cache first
+    const cached = ts.resolveModuleNameFromCache(moduleName, fromFile, cache);
+    if (cached) return cached.resolvedModule;
+
+    const result = ts.resolveModuleName(
+        moduleName,
+        fromFile,
+        compilerOptions,
+        resolutionHost,
+        cache,
+    );
+    return result.resolvedModule;
+}
+
+const mod = resolve('lodash', '/project/src/index.ts');
+if (mod) {
+    console.log('Resolved to:', mod.resolvedFileName);
+    console.log('From node_modules:', mod.isExternalLibraryImport);
+} else {
+    console.log('Could not resolve lodash');
+}
+```

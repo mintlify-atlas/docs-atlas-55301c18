@@ -1,0 +1,420 @@
+---
+title: 'TypeChecker'
+description: 'The TypeChecker interface: querying types, symbols, signatures, and assignability from a TypeScript Program.'
+keywords: ['typescript typechecker', 'getTypeAtLocation', 'getSymbolAtLocation', 'TypeFlags', 'SymbolFlags']
+---
+
+The `TypeChecker` performs semantic analysis of a TypeScript program. You use it to resolve the type of any `Node`, look up symbols, inspect call signatures, convert types to human-readable strings, and check assignability.
+
+## Obtaining a TypeChecker
+
+Call `getTypeChecker()` on a `Program`. The checker is bound to that program — do not reuse a checker across programs.
+
+```typescript
+import ts from 'typescript';
+
+const program = ts.createProgram(['src/index.ts'], {
+  target: ts.ScriptTarget.ES2022,
+  strict: true,
+});
+
+const checker = program.getTypeChecker();
+```
+
+## Resolving types and symbols
+
+### `getTypeAtLocation`
+
+Returns the `Type` of any `Node` in the AST.
+
+```typescript
+getTypeAtLocation(node: Node): Type
+```
+
+### `getSymbolAtLocation`
+
+Returns the `Symbol` that a node refers to, or `undefined` for nodes that have no binding (e.g. literal keywords).
+
+```typescript
+getSymbolAtLocation(node: Node): Symbol | undefined
+```
+
+### `getTypeOfSymbol`
+
+Returns the type of the _value_ represented by a symbol — the type you would see if you used the symbol as an expression.
+
+```typescript
+getTypeOfSymbol(symbol: Symbol): Type
+```
+
+### `getDeclaredTypeOfSymbol`
+
+For a class, interface, enum, type alias, or type parameter symbol, returns the type that the declaration itself introduces (not the type of an instantiation).
+
+```typescript
+getDeclaredTypeOfSymbol(symbol: Symbol): Type
+```
+
+### `getTypeOfSymbolAtLocation`
+
+Returns the type of a symbol in the context of a specific node. Useful when a symbol's type depends on narrowing or control-flow.
+
+```typescript
+getTypeOfSymbolAtLocation(symbol: Symbol, node: Node): Type
+```
+
+## Working with type structure
+
+### `getPropertiesOfType`
+
+Returns all property symbols visible on a type, including inherited properties.
+
+```typescript
+getPropertiesOfType(type: Type): Symbol[]
+```
+
+### `getIndexInfosOfType`
+
+Returns all index signatures (string, number, or template literal key types) defined on a type.
+
+```typescript
+getIndexInfosOfType(type: Type): readonly IndexInfo[]
+```
+
+### `getSignaturesOfType`
+
+Returns all call or construct signatures of a type.
+
+```typescript
+getSignaturesOfType(type: Type, kind: SignatureKind): readonly Signature[]
+```
+
+`SignatureKind` is a two-member enum:
+
+```typescript
+const enum SignatureKind {
+  Call,
+  Construct,
+}
+```
+
+### `getReturnTypeOfSignature`
+
+Returns the return type of a call or construct signature.
+
+```typescript
+getReturnTypeOfSignature(signature: Signature): Type
+```
+
+### `getBaseTypes`
+
+Returns the base types of a class or interface type.
+
+```typescript
+getBaseTypes(type: InterfaceType): BaseType[]
+```
+
+### `getTypeArguments`
+
+Returns the type arguments of a generic type reference (e.g. the `string` in `Array<string>`).
+
+```typescript
+getTypeArguments(type: TypeReference): readonly Type[]
+```
+
+### `getAugmentedPropertiesOfType`
+
+Like `getPropertiesOfType`, but also includes apparent properties on primitive types (e.g. `length` on `string`).
+
+```typescript
+getAugmentedPropertiesOfType(type: Type): Symbol[]
+```
+
+## Converting to strings
+
+### `typeToString`
+
+```typescript
+typeToString(
+  type: Type,
+  enclosingDeclaration?: Node,
+  flags?: TypeFormatFlags,
+): string
+```
+
+### `symbolToString`
+
+```typescript
+symbolToString(
+  symbol: Symbol,
+  enclosingDeclaration?: Node,
+  meaning?: SymbolFlags,
+  flags?: SymbolFormatFlags,
+): string
+```
+
+### `signatureToString`
+
+```typescript
+signatureToString(
+  signature: Signature,
+  enclosingDeclaration?: Node,
+  flags?: TypeFormatFlags,
+  kind?: SignatureKind,
+): string
+```
+
+### `getFullyQualifiedName`
+
+Returns the fully qualified name of a symbol, including its containing module path.
+
+```typescript
+getFullyQualifiedName(symbol: Symbol): string
+```
+
+## Symbol utilities
+
+### `getExportSymbolOfSymbol`
+
+If a symbol is a local alias for an exported symbol, returns the exported symbol; otherwise returns the input unchanged.
+
+```typescript
+getExportSymbolOfSymbol(symbol: Symbol): Symbol
+```
+
+### `getAliasedSymbol`
+
+Follows all alias chains to reach the original declaration symbol.
+
+```typescript
+getAliasedSymbol(symbol: Symbol): Symbol
+```
+
+### `getExportsOfModule`
+
+Returns all exported symbols of a module symbol.
+
+```typescript
+getExportsOfModule(moduleSymbol: Symbol): Symbol[]
+```
+
+## Assignability
+
+### `isTypeAssignableTo`
+
+Returns `true` if `source` is assignable to `target`.
+
+```typescript
+isTypeAssignableTo(source: Type, target: Type): boolean
+```
+
+```typescript
+// Example
+const stringType = checker.getStringType();
+const numberType = checker.getNumberType();
+console.log(checker.isTypeAssignableTo(stringType, numberType)); // false
+```
+
+## Built-in type accessors
+
+The `TypeChecker` exposes accessors for all intrinsic types:
+
+```typescript
+getAnyType(): Type
+getStringType(): Type
+getNumberType(): Type
+getBigIntType(): Type
+getBooleanType(): Type
+getVoidType(): Type
+getUndefinedType(): Type
+getNullType(): Type
+getNeverType(): Type
+getUnknownType(): Type
+getESSymbolType(): Type
+getNonPrimitiveType(): Type   // the 'object' keyword type
+getStringLiteralType(value: string): StringLiteralType
+getNumberLiteralType(value: number): NumberLiteralType
+```
+
+<Note>
+Do not compare types returned by these accessors with `===` to check for `any`, `undefined`, `null`, or `never`. Multiple internal instances of these types may exist. Use `type.flags & ts.TypeFlags.Any` instead.
+</Note>
+
+## The `Type` interface
+
+```typescript
+interface Type {
+  flags: TypeFlags;               // Bit-flags describing the shape of the type
+  symbol: Symbol;                 // Symbol associated with the type (if any)
+  pattern?: DestructuringPattern; // Destructuring pattern represented by the type
+  aliasSymbol?: Symbol;           // Alias symbol (for named type aliases)
+  aliasTypeArguments?: readonly Type[]; // Type arguments for a generic alias
+}
+```
+
+### `TypeFlags`
+
+Key values from `TypeFlags` (a `const enum`):
+
+```typescript
+const enum TypeFlags {
+  Any             = 1 << 0,
+  Unknown         = 1 << 1,
+  Undefined       = 1 << 2,
+  Null            = 1 << 3,
+  Void            = 1 << 4,
+  String          = 1 << 5,
+  Number          = 1 << 6,
+  BigInt          = 1 << 7,
+  Boolean         = 1 << 8,
+  ESSymbol        = 1 << 9,
+  StringLiteral   = 1 << 10,
+  NumberLiteral   = 1 << 11,
+  BigIntLiteral   = 1 << 12,
+  BooleanLiteral  = 1 << 13,
+  UniqueESSymbol  = 1 << 14,
+  EnumLiteral     = 1 << 15,
+  Enum            = 1 << 16,
+  NonPrimitive    = 1 << 17,  // 'object' keyword
+  Never           = 1 << 18,
+  TypeParameter   = 1 << 19,
+  Object          = 1 << 20,
+  Index           = 1 << 21,  // keyof T
+  TemplateLiteral = 1 << 22,
+  StringMapping   = 1 << 23,  // Uppercase/Lowercase
+  Substitution    = 1 << 24,
+  IndexedAccess   = 1 << 25,  // T[K]
+  Conditional     = 1 << 26,  // T extends U ? X : Y
+  Union           = 1 << 27,
+  Intersection    = 1 << 28,
+  // Composite flags
+  Literal         = StringLiteral | NumberLiteral | BigIntLiteral | BooleanLiteral,
+  StringLike      = String | StringLiteral | TemplateLiteral | StringMapping,
+  NumberLike      = Number | NumberLiteral | Enum,
+  UnionOrIntersection = Union | Intersection,
+  StructuredType  = Object | Union | Intersection,
+}
+```
+
+## The `Symbol` interface
+
+```typescript
+interface Symbol {
+  flags: SymbolFlags;            // Bit-flags classifying what the symbol represents
+  escapedName: __String;         // Internal escaped identifier
+  declarations?: Declaration[];  // All declaration nodes for this symbol
+  valueDeclaration?: Declaration;// The primary (first value) declaration
+  members?: SymbolTable;         // Instance members (classes, interfaces, object literals)
+  exports?: SymbolTable;         // Module exports
+  globalExports?: SymbolTable;   // Conditional UMD global exports
+}
+```
+
+<Note>
+Use `symbol.getName()` (available via `checker`) or `ts.unescapeLeadingUnderscores(symbol.escapedName)` to get a human-readable name from `escapedName`.
+</Note>
+
+### `SymbolFlags`
+
+Key values from `SymbolFlags`:
+
+```typescript
+const enum SymbolFlags {
+  FunctionScopedVariable  = 1 << 0,   // var or parameter
+  BlockScopedVariable     = 1 << 1,   // let or const
+  Property                = 1 << 2,
+  EnumMember              = 1 << 3,
+  Function                = 1 << 4,
+  Class                   = 1 << 5,
+  Interface               = 1 << 6,
+  ConstEnum               = 1 << 7,
+  RegularEnum             = 1 << 8,
+  ValueModule             = 1 << 9,   // Instantiated module (namespace)
+  NamespaceModule         = 1 << 10,  // Uninstantiated module
+  TypeLiteral             = 1 << 11,
+  ObjectLiteral           = 1 << 12,
+  Method                  = 1 << 13,
+  Constructor             = 1 << 14,
+  GetAccessor             = 1 << 15,
+  SetAccessor             = 1 << 16,
+  TypeParameter           = 1 << 18,
+  TypeAlias               = 1 << 19,
+  Alias                   = 1 << 21,
+  Optional                = 1 << 24,
+  // Composite
+  Variable    = FunctionScopedVariable | BlockScopedVariable,
+  Type        = Class | Interface | Enum | EnumMember | TypeLiteral | TypeParameter | TypeAlias,
+  Namespace   = ValueModule | NamespaceModule | Enum,
+  Accessor    = GetAccessor | SetAccessor,
+  ClassMember = Method | Accessor | Property,
+}
+```
+
+## The `Signature` interface
+
+```typescript
+interface Signature {
+  declaration?: SignatureDeclaration | JSDocSignature; // The AST node that declared this signature
+  typeParameters?: readonly TypeParameter[];           // Generic type parameters
+  parameters: readonly Symbol[];                       // Parameter symbols
+  thisParameter?: Symbol;                              // The 'this' parameter, if present
+}
+```
+
+## The `IndexInfo` interface
+
+```typescript
+interface IndexInfo {
+  keyType: Type;             // The index key type (e.g. string, number, or a template literal)
+  type: Type;                // The value type
+  isReadonly: boolean;
+  declaration?: IndexSignatureDeclaration;
+}
+```
+
+## Example: print the type of every variable declaration
+
+```typescript
+import ts from 'typescript';
+
+const sourceText = `
+const message: string = 'hello';
+const count = 42;
+const active = true;
+`;
+
+const sourceFile = ts.createSourceFile(
+  'example.ts',
+  sourceText,
+  ts.ScriptTarget.ES2022,
+  /*setParentNodes*/ true,
+);
+
+const program = ts.createProgram({
+  rootNames: ['example.ts'],
+  options: { target: ts.ScriptTarget.ES2022 },
+  host: {
+    ...ts.createCompilerHost({}),
+    getSourceFile: (name) =>
+      name === 'example.ts' ? sourceFile : undefined,
+    fileExists: (name) => name === 'example.ts',
+    readFile: (name) => name === 'example.ts' ? sourceText : undefined,
+  },
+});
+
+const checker = program.getTypeChecker();
+
+function visit(node: ts.Node) {
+  if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
+    const type = checker.getTypeAtLocation(node.name);
+    const typeStr = checker.typeToString(type);
+    console.log(`${node.name.text}: ${typeStr}`);
+  }
+  ts.forEachChild(node, visit);
+}
+
+visit(sourceFile);
+// message: string
+// count: number
+// active: boolean
+```

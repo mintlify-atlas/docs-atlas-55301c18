@@ -1,0 +1,272 @@
+---
+title: Type inference
+description: Understand how TypeScript automatically infers types from variable initializers, function returns, arrays, and contextual positions — so you don't have to write annotations everywhere.
+keywords: ['typescript', 'type inference', 'widening', 'narrowing', 'contextual typing', 'best common type']
+---
+
+TypeScript infers types automatically from the values and context in your code. You don't need to annotate every variable or return type — the compiler figures most of it out. Understanding where and how inference works lets you write concise TypeScript that is still fully type-safe.
+
+## Variable initialization
+
+When you declare a variable with an initializer, TypeScript infers the type from the assigned value:
+
+```typescript twoslash
+const message = "Hello, TypeScript"; // inferred as string
+const count = 42;                     // inferred as number
+const active = true;                  // inferred as boolean
+const nothing = null;                 // inferred as null
+```
+
+For `const` declarations, TypeScript infers the narrowest possible type (a literal type):
+
+```typescript twoslash
+const direction = "north"; // inferred as "north", not string
+const port = 8080;         // inferred as 8080, not number
+```
+
+For `let` and `var`, TypeScript widens the type to the general primitive:
+
+```typescript twoslash
+let direction = "north"; // inferred as string (widened)
+let port = 8080;         // inferred as number (widened)
+```
+
+## Function return type inference
+
+TypeScript infers the return type of a function from its `return` statements:
+
+```typescript twoslash
+function double(n: number) {
+  return n * 2; // return type inferred as number
+}
+
+function greet(name: string) {
+  return `Hello, ${name}!`; // return type inferred as string
+}
+
+function maybeNull(condition: boolean) {
+  if (condition) return "yes";
+  return null;
+  // return type inferred as string | null
+}
+```
+
+For functions with multiple return paths, TypeScript unions all the return types together.
+
+<Tip>
+You can omit return type annotations on most functions and rely on inference. Add explicit return types on public APIs and exported functions to make the contract explicit and to catch mistakes where the implementation accidentally returns the wrong type.
+</Tip>
+
+## Array element type inference
+
+TypeScript infers the element type of an array from its contents:
+
+```typescript twoslash
+const numbers = [1, 2, 3];           // inferred as number[]
+const mixed = [1, "two", true];      // inferred as (number | string | boolean)[]
+const empty: string[] = [];          // explicit annotation needed for empty arrays
+```
+
+For arrays with heterogeneous values, TypeScript applies the **best common type** algorithm (see below).
+
+## Best common type algorithm
+
+When TypeScript needs to infer a single type for a set of values — such as an array literal or a union of return types — it applies the best common type algorithm. TypeScript looks for the type that all candidate types are assignable to:
+
+```typescript twoslash
+class Animal { name = ""; }
+class Dog extends Animal { breed = ""; }
+class Cat extends Animal { indoor = true; }
+
+const pets = [new Dog(), new Cat()];
+// Inferred as (Dog | Cat)[], not Animal[]
+// TypeScript does not infer a common supertype unless it appears in the array
+
+const petsWithBase = [new Animal(), new Dog(), new Cat()];
+// Inferred as Animal[] — Animal is the best common type
+```
+
+If no single type encompasses all candidates, TypeScript forms a union.
+
+## Contextual typing
+
+TypeScript uses the *expected* type of an expression — its context — to infer types in positions where no explicit annotation is present. This is called **contextual typing**.
+
+### Event handlers
+
+```typescript twoslash
+document.addEventListener("click", (event) => {
+  // event is inferred as MouseEvent — no annotation needed
+  console.log(event.clientX, event.clientY);
+});
+
+document.addEventListener("keydown", (event) => {
+  // event is inferred as KeyboardEvent
+  console.log(event.key);
+});
+```
+
+The second parameter of `addEventListener` is typed as an `EventListener`, so TypeScript knows the callback receives a `MouseEvent` for `"click"` and a `KeyboardEvent` for `"keydown"`.
+
+### Typed callbacks
+
+```typescript twoslash
+const words = ["apple", "banana", "cherry"];
+
+// word is inferred as string — no annotation needed
+const upper = words.map((word) => word.toUpperCase());
+
+// The comparator parameters are inferred as string
+["b", "a", "c"].sort((a, b) => a.localeCompare(b));
+```
+
+### Object literals
+
+```typescript twoslash
+type Config = {
+  host: string;
+  port: number;
+  ssl: boolean;
+};
+
+// All property types are contextually typed from Config
+const config: Config = {
+  host: "localhost",  // inferred as string, checked against string
+  port: 3000,         // inferred as number, checked against number
+  ssl: false,         // inferred as boolean, checked against boolean
+};
+```
+
+## Type widening
+
+Type widening occurs when TypeScript generalizes a narrower type to a broader one. This typically happens with `let` declarations and mutable locations:
+
+```typescript twoslash
+const literalStr = "hello"; // type: "hello" (const — no widening)
+let mutableStr = "hello";   // type: string  (let — widened to string)
+```
+
+Widening also applies when values are passed to mutable positions:
+
+```typescript twoslash
+const pt = { x: 0, y: 0 }; // type: { x: number; y: number } — not { x: 0; y: 0 }
+// Object literal properties are widened because the object is mutable
+```
+
+Prevent widening with `as const`:
+
+```typescript twoslash
+const pt = { x: 0, y: 0 } as const;
+// type: { readonly x: 0; readonly y: 0 }
+```
+
+## Type narrowing
+
+Narrowing is the process by which TypeScript refines a broad type to a more specific one based on control flow. Several constructs narrow types:
+
+<AccordionGroup>
+  <Accordion title="typeof checks">
+```typescript twoslash
+function process(value: string | number) {
+  if (typeof value === "string") {
+    // value: string
+    return value.toUpperCase();
+  }
+  // value: number
+  return value.toFixed(2);
+}
+```
+  </Accordion>
+  <Accordion title="instanceof checks">
+```typescript twoslash
+function formatError(error: Error | string): string {
+  if (error instanceof Error) {
+    // error: Error
+    return error.message;
+  }
+  // error: string
+  return error;
+}
+```
+  </Accordion>
+  <Accordion title="in operator">
+```typescript twoslash
+type Circle = { kind: "circle"; radius: number };
+type Square = { kind: "square"; side: number };
+
+function describe(shape: Circle | Square): string {
+  if ("radius" in shape) {
+    // shape: Circle
+    return `Circle with radius ${shape.radius}`;
+  }
+  // shape: Square
+  return `Square with side ${shape.side}`;
+}
+```
+  </Accordion>
+  <Accordion title="Equality narrowing">
+```typescript twoslash
+function example(x: string | number, y: string | boolean) {
+  if (x === y) {
+    // Both are string — the only type they share
+    x.toUpperCase();
+    y.toUpperCase();
+  }
+}
+```
+  </Accordion>
+  <Accordion title="Truthiness narrowing">
+```typescript twoslash
+function printLength(s: string | null | undefined) {
+  if (s) {
+    // s: string (null and undefined are falsy)
+    console.log(s.length);
+  }
+}
+```
+  </Accordion>
+  <Accordion title="Type predicates">
+```typescript twoslash
+interface Fish { swim(): void; }
+interface Bird { fly(): void; }
+
+function isFish(pet: Fish | Bird): pet is Fish {
+  return (pet as Fish).swim !== undefined;
+}
+
+function move(pet: Fish | Bird) {
+  if (isFish(pet)) {
+    pet.swim(); // pet: Fish
+  } else {
+    pet.fly();  // pet: Bird
+  }
+}
+```
+  </Accordion>
+</AccordionGroup>
+
+## Inference with generics
+
+TypeScript infers generic type arguments from the values you pass:
+
+```typescript twoslash
+function identity<T>(value: T): T {
+  return value;
+}
+
+const s = identity("hello"); // T inferred as string, s: string
+const n = identity(42);      // T inferred as number, n: number
+
+function first<T>(arr: T[]): T | undefined {
+  return arr[0];
+}
+
+const item = first([1, 2, 3]); // T inferred as number, item: number | undefined
+```
+
+You can supply explicit type arguments when inference would be wrong or ambiguous:
+
+```typescript twoslash
+const parsed = JSON.parse<unknown>("{}");
+// explicit T = unknown, safer than the default any
+```

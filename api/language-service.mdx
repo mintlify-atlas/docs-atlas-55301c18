@@ -1,0 +1,462 @@
+---
+title: 'Language Service'
+description: 'Create and configure a TypeScript Language Service instance for editor-grade features like completions, diagnostics, navigation, and refactoring.'
+keywords: ['language service', 'LanguageServiceHost', 'createLanguageService', 'DocumentRegistry', 'IScriptSnapshot']
+---
+
+The TypeScript Language Service provides the full set of editor features that power IDEs: completions, diagnostics, go-to-definition, find references, refactoring, and more. It operates on a set of in-memory file snapshots managed by a **host** you implement, making it suitable for editors, linters, and any tooling that needs rich semantic information without running `tsc`.
+
+## How it works
+
+You supply a `LanguageServiceHost` that answers questions about your project (which files exist, what their contents are, what compiler options to use). The language service builds a `Program` from that information and exposes semantic operations on top of it. Because the host owns file state, you can feed it content from an editor buffer rather than the filesystem.
+
+<Steps>
+
+<Step title="Implement LanguageServiceHost">
+
+Create an object that satisfies the `LanguageServiceHost` interface. At minimum you need to implement:
+- `getCompilationSettings` — compiler options
+- `getScriptFileNames` — list of files in the project
+- `getScriptVersion` — version string (bump this when content changes)
+- `getScriptSnapshot` — the file content as an `IScriptSnapshot`
+- `getCurrentDirectory` — working directory
+- `getDefaultLibFileName` — path to `lib.d.ts`
+- `readFile` — read arbitrary files from disk
+- `fileExists` — check whether a file exists
+
+</Step>
+
+<Step title="Call createLanguageService">
+
+Pass your host to `createLanguageService` to get back a `LanguageService` instance.
+
+</Step>
+
+<Step title="Keep versions in sync">
+
+Every time file content changes, increment `getScriptVersion` for that file. The language service uses version strings to decide whether to re-parse or re-type-check.
+
+</Step>
+
+<Step title="Dispose when done">
+
+Call `languageService.dispose()` to release resources when you no longer need the instance.
+
+</Step>
+
+</Steps>
+
+## `createLanguageService`
+
+```typescript
+function createLanguageService(
+    host: LanguageServiceHost,
+    documentRegistry?: DocumentRegistry,
+    syntaxOnlyOrLanguageServiceMode?: boolean | LanguageServiceMode,
+): LanguageService
+```
+
+Creates a language service instance backed by the given host.
+
+<ResponseField name="host" type="LanguageServiceHost" required>
+  The host that provides file content and compiler settings. See [LanguageServiceHost](#languageservicehost) below.
+</ResponseField>
+
+<ResponseField name="documentRegistry" type="DocumentRegistry">
+  An optional shared registry for reusing `SourceFile` objects across multiple language service instances. If omitted, a private registry is created. See [DocumentRegistry](#documentregistry).
+</ResponseField>
+
+<ResponseField name="syntaxOnlyOrLanguageServiceMode" type="boolean | LanguageServiceMode">
+  Pass `true` or `LanguageServiceMode.Syntactic` to skip type checking and only provide syntax-based features. Defaults to `LanguageServiceMode.Semantic`.
+</ResponseField>
+
+## `LanguageServiceHost`
+
+The host interface your code must implement to drive the language service.
+
+```typescript
+interface LanguageServiceHost {
+    // Required
+    getCompilationSettings(): CompilerOptions;
+    getScriptFileNames(): string[];
+    getScriptVersion(fileName: string): string;
+    getScriptSnapshot(fileName: string): IScriptSnapshot | undefined;
+    getCurrentDirectory(): string;
+    getDefaultLibFileName(options: CompilerOptions): string;
+    readFile(path: string, encoding?: string): string | undefined;
+    fileExists(path: string): boolean;
+
+    // Optional — recommended
+    getNewLine?(): string;
+    useCaseSensitiveFileNames?(): boolean;
+    readDirectory?(path: string, extensions?: readonly string[], exclude?: readonly string[], include?: readonly string[], depth?: number): string[];
+    getDirectories?(directoryName: string): string[];
+
+    // Optional — cancellation
+    getCancellationToken?(): HostCancellationToken;
+
+    // Optional — logging
+    log?(s: string): void;
+    trace?(s: string): void;
+    error?(s: string): void;
+
+    // Optional — custom module resolution
+    resolveModuleNameLiterals?(...): readonly ResolvedModuleWithFailedLookupLocations[];
+    resolveTypeReferenceDirectiveReferences?<T>(...): readonly ResolvedTypeReferenceDirectiveWithFailedLookupLocations[];
+
+    // Optional — custom transformers
+    getCustomTransformers?(): CustomTransformers | undefined;
+}
+```
+
+<AccordionGroup>
+
+<Accordion title="getCompilationSettings()">
+
+Returns the `CompilerOptions` for the project. Called frequently; returning a cached value is fine.
+
+```typescript
+getCompilationSettings(): CompilerOptions
+```
+
+</Accordion>
+
+<Accordion title="getScriptFileNames()">
+
+Returns the complete list of TypeScript/JavaScript files in the project. The language service uses this list to build the `Program`.
+
+```typescript
+getScriptFileNames(): string[]
+```
+
+</Accordion>
+
+<Accordion title="getScriptVersion(fileName)">
+
+Returns an opaque version string for the file. Increment or change this whenever the file content changes. The language service skips re-parsing files whose version has not changed.
+
+```typescript
+getScriptVersion(fileName: string): string
+```
+
+</Accordion>
+
+<Accordion title="getScriptSnapshot(fileName)">
+
+Returns an `IScriptSnapshot` representing the current content of the file, or `undefined` if the file does not exist. Use `ScriptSnapshot.fromString(text)` to create a snapshot from a plain string.
+
+```typescript
+getScriptSnapshot(fileName: string): IScriptSnapshot | undefined
+```
+
+</Accordion>
+
+<Accordion title="getCurrentDirectory()">
+
+Returns the working directory for the project. Used to resolve relative paths.
+
+```typescript
+getCurrentDirectory(): string
+```
+
+</Accordion>
+
+<Accordion title="getDefaultLibFileName(options)">
+
+Returns the path to the default library file (`lib.d.ts` or a variant). Use `ts.getDefaultLibFilePath(options)` if you don't need a custom path.
+
+```typescript
+getDefaultLibFileName(options: CompilerOptions): string
+```
+
+</Accordion>
+
+<Accordion title="readFile(path, encoding?)">
+
+Reads a file from disk. Required for correct behaviour under `module: node16` and later resolution modes.
+
+```typescript
+readFile(path: string, encoding?: string): string | undefined
+```
+
+</Accordion>
+
+<Accordion title="fileExists(path)">
+
+Returns `true` when the file exists. Required alongside `readFile` for `node16`+ module resolution.
+
+```typescript
+fileExists(path: string): boolean
+```
+
+</Accordion>
+
+</AccordionGroup>
+
+## `IScriptSnapshot`
+
+An immutable view of a file's text at a point in time.
+
+```typescript
+interface IScriptSnapshot {
+    getText(start: number, end: number): string;
+    getLength(): number;
+    getChangeRange(oldSnapshot: IScriptSnapshot): TextChangeRange | undefined;
+    dispose?(): void;
+}
+```
+
+Create one from a plain string:
+
+```typescript
+const snapshot = ts.ScriptSnapshot.fromString(fileContents);
+```
+
+## `DocumentRegistry`
+
+When you run multiple language service instances against overlapping sets of files (for example, one per open project in an editor), a shared `DocumentRegistry` lets them reuse parsed `SourceFile` objects instead of each parsing every file independently.
+
+```typescript
+function createDocumentRegistry(
+    useCaseSensitiveFileNames?: boolean,
+    currentDirectory?: string,
+    jsDocParsingMode?: JSDocParsingMode,
+): DocumentRegistry
+```
+
+Pass the registry to every `createLanguageService` call that should share it:
+
+```typescript
+const registry = ts.createDocumentRegistry();
+const ls1 = ts.createLanguageService(host1, registry);
+const ls2 = ts.createLanguageService(host2, registry);
+```
+
+The `DocumentRegistry` interface exposes `acquireDocument`, `updateDocument`, and `releaseDocument` methods for explicit lifecycle management, but in most cases the language service manages these automatically.
+
+## `LanguageService` interface
+
+The object returned by `createLanguageService` exposes all language features.
+
+<AccordionGroup>
+
+<Accordion title="Diagnostics">
+
+```typescript
+getSyntacticDiagnostics(fileName: string): DiagnosticWithLocation[];
+getSemanticDiagnostics(fileName: string): Diagnostic[];
+getSuggestionDiagnostics(fileName: string): DiagnosticWithLocation[];
+getCompilerOptionsDiagnostics(): Diagnostic[];
+```
+
+</Accordion>
+
+<Accordion title="Completions">
+
+```typescript
+getCompletionsAtPosition(
+    fileName: string,
+    position: number,
+    options: GetCompletionsAtPositionOptions | undefined,
+    formattingSettings?: FormatCodeSettings,
+): WithMetadata<CompletionInfo> | undefined;
+
+getCompletionEntryDetails(
+    fileName: string,
+    position: number,
+    entryName: string,
+    formatOptions: FormatCodeOptions | FormatCodeSettings | undefined,
+    source: string | undefined,
+    preferences: UserPreferences | undefined,
+    data: CompletionEntryData | undefined,
+): CompletionEntryDetails | undefined;
+```
+
+</Accordion>
+
+<Accordion title="Navigation">
+
+```typescript
+getDefinitionAtPosition(fileName: string, position: number): readonly DefinitionInfo[] | undefined;
+getDefinitionAndBoundSpan(fileName: string, position: number): DefinitionInfoAndBoundSpan | undefined;
+getTypeDefinitionAtPosition(fileName: string, position: number): readonly DefinitionInfo[] | undefined;
+getImplementationAtPosition(fileName: string, position: number): readonly ImplementationLocation[] | undefined;
+getReferencesAtPosition(fileName: string, position: number): ReferenceEntry[] | undefined;
+findReferences(fileName: string, position: number): ReferencedSymbol[] | undefined;
+```
+
+</Accordion>
+
+<Accordion title="Refactoring and code fixes">
+
+```typescript
+getApplicableRefactors(
+    fileName: string,
+    positionOrRange: number | TextRange,
+    preferences: UserPreferences | undefined,
+    triggerReason?: RefactorTriggerReason,
+    kind?: string,
+    includeInteractiveActions?: boolean,
+): ApplicableRefactorInfo[];
+
+getEditsForRefactor(
+    fileName: string,
+    formatOptions: FormatCodeSettings,
+    positionOrRange: number | TextRange,
+    refactorName: string,
+    actionName: string,
+    preferences: UserPreferences | undefined,
+    interactiveRefactorArguments?: InteractiveRefactorArguments,
+): RefactorEditInfo | undefined;
+
+getCodeFixesAtPosition(
+    fileName: string,
+    start: number,
+    end: number,
+    errorCodes: readonly number[],
+    formatOptions: FormatCodeSettings,
+    preferences: UserPreferences,
+): readonly CodeFixAction[];
+
+organizeImports(
+    args: OrganizeImportsArgs,
+    formatOptions: FormatCodeSettings,
+    preferences: UserPreferences | undefined,
+): readonly FileTextChanges[];
+```
+
+</Accordion>
+
+<Accordion title="Formatting">
+
+```typescript
+getFormattingEditsForRange(fileName: string, start: number, end: number, options: FormatCodeOptions | FormatCodeSettings): TextChange[];
+getFormattingEditsForDocument(fileName: string, options: FormatCodeOptions | FormatCodeSettings): TextChange[];
+getFormattingEditsAfterKeystroke(fileName: string, position: number, key: string, options: FormatCodeOptions | FormatCodeSettings): TextChange[];
+```
+
+</Accordion>
+
+<Accordion title="Rename">
+
+```typescript
+getRenameInfo(fileName: string, position: number, preferences: UserPreferences): RenameInfo;
+findRenameLocations(
+    fileName: string,
+    position: number,
+    findInStrings: boolean,
+    findInComments: boolean,
+    preferences: UserPreferences,
+): readonly RenameLocation[] | undefined;
+getEditsForFileRename(
+    oldFilePath: string,
+    newFilePath: string,
+    formatOptions: FormatCodeSettings,
+    preferences: UserPreferences | undefined,
+): readonly FileTextChanges[];
+```
+
+</Accordion>
+
+<Accordion title="Hover and signatures">
+
+```typescript
+getQuickInfoAtPosition(fileName: string, position: number, maximumLength?: number): QuickInfo | undefined;
+getSignatureHelpItems(fileName: string, position: number, options: SignatureHelpItemsOptions | undefined): SignatureHelpItems | undefined;
+```
+
+</Accordion>
+
+<Accordion title="Emit and program">
+
+```typescript
+getEmitOutput(fileName: string, emitOnlyDtsFiles?: boolean, forceDtsEmit?: boolean): EmitOutput;
+getProgram(): Program | undefined;
+```
+
+</Accordion>
+
+<Accordion title="Lifecycle">
+
+```typescript
+cleanupSemanticCache(): void;
+dispose(): void;
+```
+
+</Accordion>
+
+</AccordionGroup>
+
+## `LanguageServiceMode`
+
+```typescript
+enum LanguageServiceMode {
+    Semantic,        // Full type checking (default)
+    PartialSemantic, // Type checking without project references
+    Syntactic,       // Syntax only, no type checking
+}
+```
+
+## Example: minimal in-memory language service
+
+```typescript
+import * as ts from 'typescript';
+import * as path from 'path';
+import * as fs from 'fs';
+
+// In-memory file store
+const files = new Map<string, { content: string; version: number }>();
+files.set('/project/index.ts', { content: 'const x: number = "hello";', version: 1 });
+
+const servicesHost: ts.LanguageServiceHost = {
+    getScriptFileNames: () => ['/project/index.ts'],
+    getScriptVersion: (fileName) => {
+        const file = files.get(fileName);
+        return file ? String(file.version) : '0';
+    },
+    getScriptSnapshot: (fileName) => {
+        const file = files.get(fileName);
+        if (file) {
+            return ts.ScriptSnapshot.fromString(file.content);
+        }
+        if (fs.existsSync(fileName)) {
+            return ts.ScriptSnapshot.fromString(fs.readFileSync(fileName, 'utf-8'));
+        }
+        return undefined;
+    },
+    getCurrentDirectory: () => '/project',
+    getCompilationSettings: () => ({
+        target: ts.ScriptTarget.ES2020,
+        module: ts.ModuleKind.CommonJS,
+        strict: true,
+    }),
+    getDefaultLibFileName: (options) => ts.getDefaultLibFilePath(options),
+    fileExists: ts.sys.fileExists,
+    readFile: ts.sys.readFile,
+    readDirectory: ts.sys.readDirectory,
+    getDirectories: ts.sys.getDirectories,
+};
+
+const languageService = ts.createLanguageService(
+    servicesHost,
+    ts.createDocumentRegistry(),
+);
+
+// Get semantic diagnostics
+const diagnostics = languageService.getSemanticDiagnostics('/project/index.ts');
+for (const diag of diagnostics) {
+    const message = ts.flattenDiagnosticMessageText(diag.messageText, '\n');
+    console.log(`Error: ${message}`);
+}
+
+// Update a file
+files.set('/project/index.ts', { content: 'const x: number = 42;', version: 2 });
+const noErrors = languageService.getSemanticDiagnostics('/project/index.ts');
+console.log('Errors after fix:', noErrors.length); // 0
+
+languageService.dispose();
+```
+
+<Tip>
+  When you update a file's content, increment its version so the language service knows to invalidate its cached parse and type information.
+</Tip>

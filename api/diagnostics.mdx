@@ -1,0 +1,272 @@
+---
+title: 'Diagnostics'
+description: 'How to collect, inspect, and format TypeScript compiler diagnostics: parse errors, type errors, and declaration emit errors.'
+keywords: ['typescript diagnostics', 'type errors', 'getSyntacticDiagnostics', 'formatDiagnostic', 'DiagnosticCategory']
+---
+
+Diagnostics are how the TypeScript compiler reports errors, warnings, and suggestions. Every `Program` method that performs analysis returns `readonly Diagnostic[]`. This page covers how to collect, flatten, and format them.
+
+## The `Diagnostic` interface
+
+`Diagnostic` extends `DiagnosticRelatedInformation`, which provides the core fields:
+
+```typescript
+interface DiagnosticRelatedInformation {
+  category: DiagnosticCategory;           // Error, Warning, Suggestion, or Message
+  code: number;                           // Unique numeric error code, e.g. 2345
+  file: SourceFile | undefined;           // Source file the diagnostic refers to
+  start: number | undefined;              // Character offset where the error starts
+  length: number | undefined;             // Length of the highlighted span
+  messageText: string | DiagnosticMessageChain; // The human-readable message
+}
+
+interface Diagnostic extends DiagnosticRelatedInformation {
+  reportsUnnecessary?: {};                // Marks unused-identifier diagnostics
+  reportsDeprecated?: {};                 // Marks usage of deprecated declarations
+  source?: string;                        // Plugin or checker that produced the diagnostic
+  relatedInformation?: DiagnosticRelatedInformation[]; // Secondary locations
+}
+```
+
+### `DiagnosticWithLocation`
+
+A narrowed subtype that guarantees `file`, `start`, and `length` are all defined. Syntactic and declaration diagnostics always have a location:
+
+```typescript
+interface DiagnosticWithLocation extends Diagnostic {
+  file: SourceFile;   // Always defined
+  start: number;      // Always defined
+  length: number;     // Always defined
+}
+```
+
+### `DiagnosticCategory`
+
+```typescript
+enum DiagnosticCategory {
+  Warning   = 0,
+  Error     = 1,
+  Suggestion = 2,
+  Message   = 3,
+}
+```
+
+### `DiagnosticMessageChain`
+
+When a single error has nested sub-messages (common in complex type errors), `messageText` is a `DiagnosticMessageChain`:
+
+```typescript
+interface DiagnosticMessageChain {
+  messageText: string;
+  category: DiagnosticCategory;
+  code: number;
+  next?: DiagnosticMessageChain[];
+}
+```
+
+Use `flattenDiagnosticMessageText` to convert a chain into a single indented string:
+
+```typescript
+function flattenDiagnosticMessageText(
+  diag: string | DiagnosticMessageChain | undefined,
+  newLine: string,
+  indent?: number,
+): string
+```
+
+## Getting diagnostics from a Program
+
+A `Program` exposes four diagnostic-collection methods:
+
+### `getSyntacticDiagnostics`
+
+Returns parse errors: unclosed braces, unexpected tokens, duplicate modifiers, and similar issues that the parser catches before any type analysis.
+
+```typescript
+program.getSyntacticDiagnostics(
+  sourceFile?: SourceFile,
+  cancellationToken?: CancellationToken,
+): readonly DiagnosticWithLocation[]
+```
+
+### `getSemanticDiagnostics`
+
+Returns type errors, undefined variables, incorrect argument types, and all other errors that require binding and type checking.
+
+```typescript
+program.getSemanticDiagnostics(
+  sourceFile?: SourceFile,
+  cancellationToken?: CancellationToken,
+): readonly Diagnostic[]
+```
+
+<Note>
+The first call to `getSemanticDiagnostics()` with no `sourceFile` argument also includes global diagnostics (errors about missing lib files or invalid `compilerOptions`). Subsequent calls do not re-emit these global diagnostics.
+</Note>
+
+### `getDeclarationDiagnostics`
+
+Returns errors that occur specifically when emitting `.d.ts` declaration files — for example, a public API that refers to a type that cannot be expressed in the output.
+
+```typescript
+program.getDeclarationDiagnostics(
+  sourceFile?: SourceFile,
+  cancellationToken?: CancellationToken,
+): readonly DiagnosticWithLocation[]
+```
+
+### `getGlobalDiagnostics`
+
+Returns errors about the global environment: missing lib files, unsatisfied `/// <reference lib="..." />` directives, and similar global configuration problems.
+
+```typescript
+program.getGlobalDiagnostics(
+  cancellationToken?: CancellationToken,
+): readonly Diagnostic[]
+```
+
+## The `getPreEmitDiagnostics` convenience function
+
+`getPreEmitDiagnostics` merges all diagnostics you care about before emitting JavaScript into a single sorted, deduplicated array:
+
+```typescript
+function getPreEmitDiagnostics(
+  program: Program,
+  sourceFile?: SourceFile,
+  cancellationToken?: CancellationToken,
+): readonly Diagnostic[]
+```
+
+It combines:
+- `getConfigFileParsingDiagnostics()`
+- `getOptionsDiagnostics()`
+- `getSyntacticDiagnostics()`
+- `getGlobalDiagnostics()`
+- `getSemanticDiagnostics()`
+- `getDeclarationDiagnostics()` (only when `declaration: true`)
+
+## Formatting diagnostics
+
+### `formatDiagnostic`
+
+Formats a single diagnostic as a plain-text string in the `tsc` output style:
+
+```typescript
+function formatDiagnostic(
+  diagnostic: Diagnostic,
+  host: FormatDiagnosticsHost,
+): string
+```
+
+Output example:
+```
+src/index.ts(3,5): error TS2345: Argument of type 'number' is not assignable to parameter of type 'string'.
+```
+
+### `formatDiagnosticsWithColorAndContext`
+
+Formats an array of diagnostics with ANSI color codes and source-context lines — the same output you see from `tsc` in a terminal:
+
+```typescript
+function formatDiagnosticsWithColorAndContext(
+  diagnostics: readonly Diagnostic[],
+  host: FormatDiagnosticsHost,
+): string
+```
+
+### `FormatDiagnosticsHost`
+
+Both formatting functions require a host object:
+
+```typescript
+interface FormatDiagnosticsHost {
+  getCurrentDirectory(): string;
+  getCanonicalFileName(fileName: string): string;
+  getNewLine(): string;
+}
+```
+
+For a minimal in-memory host:
+
+```typescript
+const formatHost: ts.FormatDiagnosticsHost = {
+  getCurrentDirectory: () => process.cwd(),
+  getCanonicalFileName: (f) => f,
+  getNewLine: () => '\n',
+};
+```
+
+### `flattenDiagnosticMessageText`
+
+TypeScript's most complex errors (such as "Type X is not assignable to type Y") carry a nested `DiagnosticMessageChain`. Flatten it to a plain string:
+
+```typescript
+const message = ts.flattenDiagnosticMessageText(
+  diagnostic.messageText,
+  '\n',
+);
+```
+
+## Example: type-check a file and print all errors
+
+```typescript
+import ts from 'typescript';
+import path from 'node:path';
+
+const fileName = path.resolve('src/index.ts');
+const options: ts.CompilerOptions = {
+  target: ts.ScriptTarget.ES2022,
+  strict: true,
+  noEmit: true,
+};
+
+const program = ts.createProgram([fileName], options);
+
+const formatHost: ts.FormatDiagnosticsHost = {
+  getCurrentDirectory: () => process.cwd(),
+  getCanonicalFileName: (f) => f,
+  getNewLine: () => '\n',
+};
+
+// Collect all pre-emit diagnostics
+const diagnostics = ts.getPreEmitDiagnostics(program);
+
+if (diagnostics.length === 0) {
+  console.log('No errors found.');
+  process.exit(0);
+}
+
+// Print each diagnostic individually
+for (const diagnostic of diagnostics) {
+  if (diagnostic.file && diagnostic.start !== undefined) {
+    const { line, character } =
+      ts.getLineAndCharacterOfPosition(diagnostic.file, diagnostic.start);
+    const message = ts.flattenDiagnosticMessageText(
+      diagnostic.messageText,
+      '\n',
+    );
+    const relFile = path.relative(process.cwd(), diagnostic.file.fileName);
+    console.error(
+      `${relFile}:${line + 1}:${character + 1} - ` +
+      `${ts.DiagnosticCategory[diagnostic.category].toLowerCase()} ` +
+      `TS${diagnostic.code}: ${message}`,
+    );
+  } else {
+    console.error(
+      ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'),
+    );
+  }
+}
+
+process.exit(1);
+```
+
+Or use the built-in formatter for colorized output identical to `tsc`:
+
+```typescript
+const output = ts.formatDiagnosticsWithColorAndContext(
+  ts.getPreEmitDiagnostics(program),
+  formatHost,
+);
+process.stderr.write(output);
+```

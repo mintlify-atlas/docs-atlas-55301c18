@@ -1,0 +1,318 @@
+---
+title: Type compatibility
+description: Understand how TypeScript determines whether one type is assignable to another, including structural typing, function compatibility, generics, and discriminated unions.
+keywords: [type compatibility, structural typing, duck typing, assignability, bivariance, covariance, excess property checking]
+---
+
+TypeScript uses **structural typing** to determine whether two types are compatible. Two types are compatible if they have the same shape — the same set of properties and methods with compatible types — regardless of what they are named.
+
+## Structural typing
+
+Unlike nominal type systems (Java, C#), TypeScript checks structure rather than name:
+
+```typescript twoslash
+interface Point2D {
+  x: number;
+  y: number;
+}
+
+interface Coordinate {
+  x: number;
+  y: number;
+}
+
+function printPoint(p: Point2D): void {
+  console.log(`(${p.x}, ${p.y})`);
+}
+
+const coord: Coordinate = { x: 3, y: 4 };
+printPoint(coord); // Works: Coordinate is structurally identical to Point2D
+```
+
+## Assignability: fewer members can be assigned to more members
+
+A type with *more* properties is assignable to a type with *fewer* required properties — it satisfies all the requirements and then some:
+
+```typescript twoslash
+interface Named {
+  name: string;
+}
+
+interface NamedAndAged {
+  name: string;
+  age: number;
+}
+
+function greet(person: Named): string {
+  return `Hello, ${person.name}`;
+}
+
+const alice: NamedAndAged = { name: 'Alice', age: 30 };
+greet(alice); // OK — NamedAndAged satisfies Named
+```
+
+The reverse is not true: a type with fewer properties cannot be assigned where more properties are required.
+
+## Excess property checking
+
+When you assign an **object literal** directly to a typed variable or pass it directly to a function, TypeScript applies excess property checking and rejects extra properties:
+
+```typescript twoslash
+// @errors: 2353
+interface Options {
+  timeout: number;
+  retries?: number;
+}
+
+function request(opts: Options): void { /* ... */ }
+
+// Error: 'baseUrl' does not exist in type 'Options'
+request({ timeout: 5000, retries: 3, baseUrl: 'https://api.example.com' });
+```
+
+Excess property checking only applies to fresh object literals. Assigning through a variable bypasses it:
+
+```typescript twoslash
+interface Options {
+  timeout: number;
+  retries?: number;
+}
+
+function request(opts: Options): void { /* ... */ }
+
+const opts = { timeout: 5000, retries: 3, baseUrl: 'https://api.example.com' };
+request(opts); // OK — stale object literal, structural check only
+```
+
+## Function compatibility
+
+### Parameter count
+
+A function with fewer parameters is assignable to a function type with more parameters. This matches how JavaScript callbacks work — you can always ignore extra arguments:
+
+```typescript twoslash
+const nums = [1, 2, 3];
+
+// Array.forEach callback signature: (value: number, index: number, array: number[]) => void
+// But a callback with fewer params is fine:
+nums.forEach((n) => console.log(n));       // 1 param
+nums.forEach((n, i) => console.log(i, n)); // 2 params
+```
+
+### Function parameter bivariance vs. strict function types
+
+By default, method signatures are checked **bivariantly** (both co- and contravariantly), which is unsound but pragmatic. With `strictFunctionTypes: true` (included in `strict`), function type parameters are checked **contravariantly**.
+
+```typescript twoslash
+// @strictFunctionTypes: true
+type Logger = (message: string) => void;
+type DetailedLogger = (message: string, level: 'info' | 'warn' | 'error') => void;
+
+// DetailedLogger is NOT assignable to Logger under strictFunctionTypes
+// because a caller of Logger might pass only one argument,
+// but DetailedLogger requires two.
+declare let log: Logger;
+declare let detailed: DetailedLogger;
+
+log = detailed; // Error under strictFunctionTypes
+```
+
+<Note>
+  `strictFunctionTypes` only applies to function types written with `=>`. Method signatures (inside interfaces or classes) remain bivariant for compatibility with common patterns like `Array.prototype.push`.
+</Note>
+
+### Return type compatibility
+
+Return types are checked **covariantly**: a function that returns a more specific type is assignable to a function type with a less specific return type.
+
+```typescript twoslash
+type GetString = () => string;
+type GetStringOrNull = () => string | null;
+
+declare let getString: GetString;
+declare let getStringOrNull: GetStringOrNull;
+
+// OK — string is assignable to string | null (more specific to less specific)
+getStringOrNull = getString;
+
+// Error — string | null is not assignable to string
+// getString = getStringOrNull;
+```
+
+### Optional and rest parameter compatibility
+
+Optional parameters and rest parameters are treated as interchangeable:
+
+```typescript twoslash
+type F1 = (a: number, b?: string) => void;
+type F2 = (a: number, ...rest: string[]) => void;
+type F3 = (a: number) => void;
+
+declare let f1: F1, f2: F2, f3: F3;
+
+// All compatible — rest/optional behave similarly for assignability
+f3 = f1;
+f3 = f2;
+```
+
+## Class compatibility
+
+TypeScript checks only the **instance side** of a class — not the constructor. Two classes are compatible if their instance shapes match:
+
+```typescript twoslash
+class Animal {
+  feet: number = 4;
+  constructor(name: string, numFeet: number) {
+    this.feet = numFeet;
+  }
+}
+
+class Size {
+  feet: number = 0;
+}
+
+declare let a: Animal;
+declare let s: Size;
+
+a = s; // OK — same instance shape
+s = a; // OK
+```
+
+Private and protected members **are** considered. A class with a `private` property is only compatible with another class that inherited the same private property from the same declaration:
+
+```typescript twoslash
+// @errors: 2322
+class Dog {
+  private secret = 42;
+  name = 'Rex';
+}
+
+class Cat {
+  private secret = 42; // different declaration — incompatible!
+  name = 'Whiskers';
+}
+
+declare let dog: Dog;
+declare let cat: Cat;
+
+dog = cat; // Error: types have incompatible private fields
+```
+
+## Generics compatibility
+
+Generic types are compared after substituting type arguments. An uninstantiated generic is compatible if any possible substitution is compatible:
+
+```typescript twoslash
+interface Empty<T> {}
+interface NotEmpty<T> { value: T; }
+
+declare let x: Empty<number>;
+declare let y: Empty<string>;
+
+x = y; // OK — both are empty regardless of T
+
+declare let a: NotEmpty<number>;
+declare let b: NotEmpty<string>;
+
+// a = b; // Error — number is not assignable to string
+```
+
+When a generic function has no type arguments yet, TypeScript substitutes `unknown` for unbound type parameters when comparing:
+
+```typescript twoslash
+function identity<T>(x: T): T { return x; }
+function swap<T>(x: T): T { return x; }
+
+let f: typeof identity = swap; // OK — same shape
+```
+
+## Discriminated unions
+
+A discriminated union is a union type where each member has a literal type property (the discriminant). TypeScript uses the discriminant to narrow the type inside `switch` or `if` blocks:
+
+```typescript twoslash
+type Shape =
+  | { kind: 'circle'; radius: number }
+  | { kind: 'rectangle'; width: number; height: number }
+  | { kind: 'triangle'; base: number; height: number };
+
+function area(shape: Shape): number {
+  switch (shape.kind) {
+    case 'circle':
+      return Math.PI * shape.radius ** 2;
+    case 'rectangle':
+      return shape.width * shape.height;
+    case 'triangle':
+      return 0.5 * shape.base * shape.height;
+  }
+}
+```
+
+For exhaustiveness checking, add a `never` default branch:
+
+```typescript twoslash
+type Shape =
+  | { kind: 'circle'; radius: number }
+  | { kind: 'rectangle'; width: number; height: number };
+
+function assertNever(x: never): never {
+  throw new Error('Unhandled case: ' + JSON.stringify(x));
+}
+
+function area(shape: Shape): number {
+  switch (shape.kind) {
+    case 'circle': return Math.PI * shape.radius ** 2;
+    case 'rectangle': return shape.width * shape.height;
+    default: return assertNever(shape); // compile error if a case is missing
+  }
+}
+```
+
+## `keyof` and mapped types in compatibility
+
+Mapped types preserve compatibility relationships from their source type:
+
+```typescript twoslash
+interface User {
+  id: number;
+  name: string;
+  email: string;
+}
+
+type ReadonlyUser = Readonly<User>;
+type PartialUser = Partial<User>;
+
+declare let user: User;
+declare let ro: ReadonlyUser;
+declare let partial: PartialUser;
+
+// ReadonlyUser is structurally compatible with User (same properties, same types)
+user = ro; // OK
+
+// PartialUser is not assignable to User because properties may be undefined
+// user = partial; // Error: id, name, email might be undefined
+```
+
+## Literal type freshness
+
+Literal types inferred from object literals are "fresh". Freshness triggers excess property checking and more precise type narrowing. Once a literal is assigned to a variable, its type widens:
+
+```typescript twoslash
+// @errors: 2353
+type Direction = 'north' | 'south' | 'east' | 'west';
+
+function move(direction: Direction, steps: number): void { /* ... */ }
+
+move('north', 3);      // OK — fresh literal, valid member
+move('diagonal', 1);  // Error — 'diagonal' is not in the union
+
+const dir = 'diagonal'; // widened to string (but still literal type 'diagonal')
+// move(dir, 1);        // Error — 'diagonal' not assignable to Direction
+```
+
+Use `as const` to preserve literal types:
+
+```typescript twoslash
+const DIRECTIONS = ['north', 'south', 'east', 'west'] as const;
+type Direction = (typeof DIRECTIONS)[number]; // 'north' | 'south' | 'east' | 'west'
+```

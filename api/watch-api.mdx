@@ -1,0 +1,299 @@
+---
+title: 'Watch API'
+description: 'Automatically recompile on file changes using createWatchCompilerHost and createWatchProgram.'
+keywords: ['watch', 'createWatchProgram', 'createWatchCompilerHost', 'WatchCompilerHost', 'WatchFileKind', 'file watcher']
+---
+
+The watch API drives TypeScript's `--watch` mode. It monitors source files and their dependencies, then rebuilds the program whenever anything changes. Use `createWatchCompilerHost` to configure the watcher and `createWatchProgram` to start it.
+
+## Creating a watch host
+
+There are two overloads of `createWatchCompilerHost` depending on how you specify the project.
+
+<Tabs>
+
+<Tab title="From a tsconfig.json">
+
+```typescript
+function createWatchCompilerHost<T extends BuilderProgram>(
+    configFileName: string,
+    optionsToExtend: CompilerOptions | undefined,
+    system: System,
+    createProgram?: CreateProgram<T>,
+    reportDiagnostic?: DiagnosticReporter,
+    reportWatchStatus?: WatchStatusReporter,
+    watchOptionsToExtend?: WatchOptions,
+    extraFileExtensions?: readonly FileExtensionInfo[],
+): WatchCompilerHostOfConfigFile<T>
+```
+
+</Tab>
+
+<Tab title="From root files and options">
+
+```typescript
+function createWatchCompilerHost<T extends BuilderProgram>(
+    rootFiles: string[],
+    options: CompilerOptions,
+    system: System,
+    createProgram?: CreateProgram<T>,
+    reportDiagnostic?: DiagnosticReporter,
+    reportWatchStatus?: WatchStatusReporter,
+    projectReferences?: readonly ProjectReference[],
+    watchOptions?: WatchOptions,
+): WatchCompilerHostOfFilesAndCompilerOptions<T>
+```
+
+</Tab>
+
+</Tabs>
+
+<ResponseField name="configFileName / rootFiles" type="string | string[]" required>
+  Either the path to a `tsconfig.json` or an array of root TypeScript file paths.
+</ResponseField>
+
+<ResponseField name="optionsToExtend / options" type="CompilerOptions" required>
+  Compiler options. When using a config file, these are merged on top of the config file's options.
+</ResponseField>
+
+<ResponseField name="system" type="System" required>
+  The system abstraction for file I/O and watching. Pass `ts.sys` to use the real file system.
+</ResponseField>
+
+<ResponseField name="createProgram" type="CreateProgram<T>">
+  Factory for the `BuilderProgram`. Defaults to `ts.createEmitAndSemanticDiagnosticsBuilderProgram`. Use `ts.createSemanticDiagnosticsBuilderProgram` for diagnostics-only mode.
+</ResponseField>
+
+<ResponseField name="reportDiagnostic" type="DiagnosticReporter">
+  Callback invoked for each diagnostic. Defaults to printing to stderr.
+</ResponseField>
+
+<ResponseField name="reportWatchStatus" type="WatchStatusReporter">
+  Callback invoked when the watch status changes ("Starting compilation…", "Found N errors", etc.).
+</ResponseField>
+
+## `createWatchProgram`
+
+Starts the watcher and returns a `WatchProgram` handle.
+
+```typescript
+function createWatchProgram<T extends BuilderProgram>(
+    host: WatchCompilerHostOfFilesAndCompilerOptions<T>,
+): WatchOfFilesAndCompilerOptions<T>
+
+function createWatchProgram<T extends BuilderProgram>(
+    host: WatchCompilerHostOfConfigFile<T>,
+): WatchOfConfigFile<T>
+```
+
+The returned object implements the `Watch<T>` interface.
+
+## `Watch<T>` interface
+
+Common interface implemented by both `WatchOfConfigFile` and `WatchOfFilesAndCompilerOptions`.
+
+```typescript
+interface Watch<T> {
+    getProgram(): T;
+    close(): void;
+}
+```
+
+<ResponseField name="getProgram()" type="T">
+  Synchronises with the host and returns the most up-to-date `BuilderProgram`. Call this after every recompilation to get fresh diagnostics.
+</ResponseField>
+
+<ResponseField name="close()" type="void">
+  Stops all file system watchers and releases resources.
+</ResponseField>
+
+## `WatchOfFilesAndCompilerOptions`
+
+Extends `Watch<T>` with one additional method.
+
+```typescript
+interface WatchOfFilesAndCompilerOptions<T> extends Watch<T> {
+    updateRootFileNames(fileNames: string[]): void;
+}
+```
+
+<ResponseField name="updateRootFileNames(fileNames)" type="void">
+  Replaces the list of root files and triggers a recompilation. Only available when using the files-and-options overload, not the config-file overload.
+</ResponseField>
+
+## `WatchStatusReporter`
+
+```typescript
+type WatchStatusReporter = (
+    diagnostic: Diagnostic,
+    newLine: string,
+    options: CompilerOptions,
+    errorCount?: number,
+) => void;
+```
+
+`errorCount` is `undefined` before the first compilation completes.
+
+## `WatchCompilerHost<T>`
+
+Base interface that both host variants extend.
+
+```typescript
+interface WatchCompilerHost<T extends BuilderProgram> extends ProgramHost<T>, WatchHost {
+    useSourceOfProjectReferenceRedirect?(): boolean;
+    getParsedCommandLine?(fileName: string): ParsedCommandLine | undefined;
+    afterProgramCreate?(program: T): void;
+}
+```
+
+<ResponseField name="afterProgramCreate" type="(program: T) => void">
+  Invoked after every new program is created (including incremental recompilations). Use this to read diagnostics or emit output.
+</ResponseField>
+
+## `WatchCompilerHostOfConfigFile<T>`
+
+```typescript
+interface WatchCompilerHostOfConfigFile<T extends BuilderProgram>
+    extends WatchCompilerHost<T> {
+    configFileName: string;
+    optionsToExtend?: CompilerOptions;
+    watchOptionsToExtend?: WatchOptions;
+    extraFileExtensions?: readonly FileExtensionInfo[];
+    readDirectory(
+        path: string,
+        extensions?: readonly string[],
+        exclude?: readonly string[],
+        include?: readonly string[],
+        depth?: number,
+    ): string[];
+}
+```
+
+## `WatchCompilerHostOfFilesAndCompilerOptions<T>`
+
+```typescript
+interface WatchCompilerHostOfFilesAndCompilerOptions<T extends BuilderProgram>
+    extends WatchCompilerHost<T> {
+    rootFiles: string[];
+    options: CompilerOptions;
+    watchOptions?: WatchOptions;
+    projectReferences?: readonly ProjectReference[];
+}
+```
+
+## Watch kind enums
+
+### `WatchFileKind`
+
+Controls how individual files are watched. Set via `WatchOptions.watchFile`.
+
+```typescript
+enum WatchFileKind {
+    FixedPollingInterval,        // Poll on a fixed interval
+    PriorityPollingInterval,     // Poll, but adjust interval based on file change frequency
+    DynamicPriorityPolling,      // Start with slow polling; accelerate after a change
+    FixedChunkSizePolling,       // Poll a fixed number of files per interval in chunks
+    UseFsEvents,                 // Use native OS file-system events
+    UseFsEventsOnParentDirectory,// Watch the parent directory using fs events
+}
+```
+
+### `WatchDirectoryKind`
+
+Controls how directories are watched. Set via `WatchOptions.watchDirectory`.
+
+```typescript
+enum WatchDirectoryKind {
+    UseFsEvents,             // Use native OS directory events
+    FixedPollingInterval,    // Poll on a fixed interval
+    DynamicPriorityPolling,  // Accelerate polling after changes
+    FixedChunkSizePolling,   // Process directories in fixed-size chunks
+}
+```
+
+### `PollingWatchKind`
+
+Fallback polling strategy. Set via `WatchOptions.fallbackPolling`.
+
+```typescript
+enum PollingWatchKind {
+    FixedInterval,    // Poll every N milliseconds
+    PriorityInterval, // Vary interval by priority
+    DynamicPriority,  // Accelerate based on activity
+    FixedChunkSize,   // Poll a fixed-size chunk per interval
+}
+```
+
+## Example: watch program that logs recompilation results
+
+```typescript
+import * as ts from 'typescript';
+
+const formatHost: ts.FormatDiagnosticsHost = {
+    getCanonicalFileName: (p) => p,
+    getCurrentDirectory: ts.sys.getCurrentDirectory,
+    getNewLine: () => ts.sys.newLine,
+};
+
+function reportDiagnostic(diagnostic: ts.Diagnostic) {
+    console.error(
+        'Error',
+        diagnostic.code,
+        ':',
+        ts.flattenDiagnosticMessageText(diagnostic.messageText, formatHost.getNewLine()),
+    );
+}
+
+function reportWatchStatus(
+    diagnostic: ts.Diagnostic,
+    newLine: string,
+    _options: ts.CompilerOptions,
+    errorCount?: number,
+) {
+    const msg = ts.flattenDiagnosticMessageText(diagnostic.messageText, newLine);
+    if (errorCount !== undefined) {
+        console.info(`${msg} — ${errorCount} error(s)`);
+    } else {
+        console.info(msg);
+    }
+}
+
+// Start watching from tsconfig.json
+const host = ts.createWatchCompilerHost(
+    'tsconfig.json',
+    {},
+    ts.sys,
+    ts.createEmitAndSemanticDiagnosticsBuilderProgram,
+    reportDiagnostic,
+    reportWatchStatus,
+);
+
+// Intercept afterProgramCreate to run custom logic after each build
+const origAfterCreate = host.afterProgramCreate;
+host.afterProgramCreate = (program) => {
+    origAfterCreate?.(program);
+
+    const allDiagnostics = program
+        .getSemanticDiagnostics()
+        .concat(program.getSyntacticDiagnostics());
+
+    if (allDiagnostics.length > 0) {
+        console.error(ts.formatDiagnosticsWithColorAndContext(allDiagnostics, formatHost));
+    } else {
+        console.log('Build succeeded with no diagnostics.');
+    }
+};
+
+const watchProgram = ts.createWatchProgram(host);
+
+// The watch program runs indefinitely.
+// Call watchProgram.close() to stop.
+process.on('SIGINT', () => {
+    watchProgram.close();
+    process.exit(0);
+});
+```
+
+<Tip>
+  Set `WatchOptions.watchFile` to `WatchFileKind.UseFsEvents` and `WatchOptions.watchDirectory` to `WatchDirectoryKind.UseFsEvents` to use native OS events instead of polling. This reduces CPU usage significantly on large projects.
+</Tip>

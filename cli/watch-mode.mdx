@@ -1,0 +1,163 @@
+---
+title: 'Watch mode'
+description: 'Automatically recompile TypeScript when files change using tsc --watch.'
+keywords: ['watch mode', 'tsc --watch', 'file watching', 'watchOptions', 'hot reload']
+---
+
+Watch mode keeps the TypeScript compiler running and recompiles your project automatically whenever a source file changes. Enable it with `--watch` or its shorthand `-w`:
+
+```bash
+tsc --watch
+tsc -w
+
+# Watch a specific project
+tsc --watch --project tsconfig.json
+```
+
+When you start watch mode, TypeScript performs a full initial build, then prints a message like:
+
+```
+[11:30:00 AM] Starting compilation in watch mode...
+[11:30:01 AM] Found 0 errors. Watching for file changes.
+```
+
+Every subsequent save triggers an incremental recompile of only the affected files.
+
+## What triggers a recompile
+
+TypeScript watches:
+
+- Every source file included in the compilation (`.ts`, `.tsx`, `.d.ts`)
+- Every directory that could contain a new file matching the `include` or `files` globs in `tsconfig.json`
+- The `tsconfig.json` file itself
+- Any `tsconfig.json` files referenced via `extends` or `references`
+
+When a watched file or directory changes, TypeScript recomputes the set of affected files and recompiles only those.
+
+## Configuring watch in tsconfig.json
+
+You can configure the file-watching strategy in `tsconfig.json` under the `watchOptions` key:
+
+```json
+{
+  "compilerOptions": { ... },
+  "watchOptions": {
+    "watchFile": "useFsEvents",
+    "watchDirectory": "useFsEvents",
+    "fallbackPolling": "dynamicPriority",
+    "synchronousWatchDirectory": false,
+    "excludeDirectories": ["**/node_modules"],
+    "excludeFiles": []
+  }
+}
+```
+
+## Watch options reference
+
+### watchFile
+
+<ParamField path="watchOptions.watchFile" type="string" default="useFsEvents">
+  Controls how individual files are watched.
+
+  | Value | Description |
+  |---|---|
+  | `useFsEvents` | Use native OS file system events (default). Most efficient on Linux, macOS, and Windows. |
+  | `useFsEventsOnParentDirectory` | Watch the parent directory with OS events and filter by file name. Uses fewer OS-level watches. |
+  | `fixedPollingInterval` | Poll every file at a fixed interval. High CPU usage; use only when OS events are unavailable. |
+  | `priorityPollingInterval` | Poll files at different rates depending on their type (source files more often than `node_modules`). |
+  | `dynamicPriorityPolling` | Adjust polling frequency dynamically based on how often a file changes. |
+  | `fixedChunkSizePolling` | Poll a fixed number of files per tick regardless of how often they change. |
+</ParamField>
+
+### watchDirectory
+
+<ParamField path="watchOptions.watchDirectory" type="string" default="useFsEvents">
+  Controls how directory trees are watched on systems that do not support recursive file watching natively.
+
+  | Value | Description |
+  |---|---|
+  | `useFsEvents` | Use native OS directory watch events (default). |
+  | `fixedPollingInterval` | Poll each directory at a fixed interval. |
+  | `dynamicPriorityPolling` | Adjust polling frequency based on observed change rates. |
+  | `fixedChunkSizePolling` | Poll a fixed batch of directories per tick. |
+</ParamField>
+
+### fallbackPolling
+
+<ParamField path="watchOptions.fallbackPolling" type="string" default="priorityInterval">
+  Strategy to use when the system runs out of native file system watchers.
+
+  | Value | Description |
+  |---|---|
+  | `fixedInterval` | Poll at a constant interval. |
+  | `priorityInterval` | Poll at different intervals based on file type (default). |
+  | `dynamicPriority` | Dynamically adjust polling intervals based on change frequency. |
+  | `fixedChunkSize` | Poll a fixed batch of files per tick. |
+</ParamField>
+
+### synchronousWatchDirectory
+
+<ParamField path="watchOptions.synchronousWatchDirectory" type="boolean" default="false">
+  On platforms that lack native recursive watching, call directory-watcher callbacks synchronously rather than batching them. Reduces the delay before a recompile starts but can increase CPU usage for large directories.
+</ParamField>
+
+### excludeDirectories
+
+<ParamField path="watchOptions.excludeDirectories" type="string[]">
+  A list of directory globs to remove from the watch process. Use this to reduce the number of directories watched when you have a slow file system or hit OS watcher limits.
+
+  ```json
+  "watchOptions": {
+    "excludeDirectories": ["**/node_modules", "dist"]
+  }
+  ```
+</ParamField>
+
+### excludeFiles
+
+<ParamField path="watchOptions.excludeFiles" type="string[]">
+  A list of file globs to exclude from watch-mode processing. Matching files are still compiled if they are part of the program; they just will not trigger a recompile when they change.
+
+  ```json
+  "watchOptions": {
+    "excludeFiles": ["generated/**/*.ts"]
+  }
+  ```
+</ParamField>
+
+## Polling vs. OS events
+
+On most systems, `useFsEvents` is the best choice because it relies on the OS to push change notifications rather than polling on a timer. Polling is only necessary when:
+
+- The file system does not support native events (some network drives or containers).
+- You have hit the OS limit on the number of open file watchers (common on Linux; see `fs.inotify.max_user_watches`).
+
+<Tip>
+On Linux, you can increase the inotify watch limit to avoid falling back to polling:
+
+```bash
+echo fs.inotify.max_user_watches=524288 | sudo tee -a /etc/sysctl.conf && sudo sysctl -p
+```
+</Tip>
+
+## Additional watch-related flags
+
+<ParamField path="--preserveWatchOutput" type="boolean" default="false">
+  Disable clearing the console between compilations. Useful when you want to keep the full error history visible.
+</ParamField>
+
+<ParamField path="--assumeChangesOnlyAffectDirectDependencies" type="boolean" default="false">
+  In incremental and watch mode, assume that a change in a file only affects files that directly import it. This makes recompiles faster but may miss transitive errors.
+</ParamField>
+
+## Exit codes
+
+Watch mode does not exit on its own until stdin closes or the process receives a signal.
+
+| Signal | Behavior |
+|---|---|
+| `Ctrl+C` / `SIGINT` | Terminates the compiler process. |
+| `SIGTERM` | Terminates the compiler process. |
+| stdin closed | Terminates the compiler process. |
+
+The exit code after termination reflects the result of the last completed compilation: `0` for success, `1` for type errors or emit failures, `2` for a configuration error.

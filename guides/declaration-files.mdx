@@ -1,0 +1,252 @@
+---
+title: Declaration files
+description: Understand .d.ts files — what they are, how to consume them, how to write them for your own libraries, and how to publish them with your npm package.
+---
+
+Declaration files (`.d.ts`) contain only type information — no runtime code. They tell TypeScript the shape of a module, a global variable, or an entire library so that you get type checking and editor tooling without needing the implementation source.
+
+## How declaration files are consumed
+
+When you import a package, TypeScript looks for types in the following order:
+
+1. The `types` or `typings` field in the package's `package.json`
+2. An `index.d.ts` file at the package root
+3. A matching package under `@types/*` in `node_modules/@types`
+
+For most popular libraries, installing the `@types/*` package is all you need:
+
+```bash
+npm install --save-dev @types/lodash @types/express @types/node
+```
+
+TypeScript picks them up automatically — no `tsconfig.json` changes required.
+
+<Note>
+  Many modern packages (like `axios`, `zod`, and `vite`) bundle their own types. You do not need a separate `@types/*` package for them.
+</Note>
+
+## Generating declaration files automatically
+
+If you publish a TypeScript library, the compiler can generate `.d.ts` files from your source:
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "declaration": true,
+    "declarationDir": "./dist/types",
+    "outDir": "./dist"
+  }
+}
+```
+
+Running `tsc` will emit both `.js` files and `.d.ts` files. Point consumers to your types via `package.json`:
+
+```json package.json
+{
+  "main": "./dist/index.js",
+  "types": "./dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/types/index.d.ts"
+    }
+  }
+}
+```
+
+Alternatively, use `dts-gen` to scaffold declaration files for an existing JavaScript package:
+
+```bash
+npx dts-gen -m some-js-package
+```
+
+## The `declare` keyword
+
+The `declare` keyword tells TypeScript that a value exists at runtime but is not defined in the current file. You use it in `.d.ts` files and in ambient contexts.
+
+```typescript
+declare const __VERSION__: string;
+declare function fetch(url: string, init?: RequestInit): Promise<Response>;
+declare class EventEmitter {
+  on(event: string, listener: (...args: any[]) => void): this;
+  emit(event: string, ...args: any[]): boolean;
+}
+```
+
+## Writing declaration files for your own library
+
+### Modules
+
+Most libraries export a module. The declaration file mirrors your public API:
+
+```typescript dist/types/index.d.ts
+export declare function createClient(options: ClientOptions): Client;
+
+export interface ClientOptions {
+  baseUrl: string;
+  timeout?: number;
+  headers?: Record<string, string>;
+}
+
+export interface Client {
+  get<T>(path: string): Promise<T>;
+  post<T>(path: string, body: unknown): Promise<T>;
+  delete(path: string): Promise<void>;
+}
+```
+
+### Classes
+
+```typescript
+export declare class Logger {
+  constructor(namespace: string);
+  info(message: string, ...args: unknown[]): void;
+  warn(message: string, ...args: unknown[]): void;
+  error(message: string, ...args: unknown[]): void;
+  child(namespace: string): Logger;
+}
+```
+
+### Function overloads
+
+Use overload signatures when a function accepts multiple call signatures:
+
+```typescript
+export declare function parse(input: string): unknown;
+export declare function parse<T>(input: string, schema: Schema<T>): T;
+```
+
+### Namespace exports
+
+Some libraries export a namespace of related utilities:
+
+```typescript
+export declare namespace StringUtils {
+  function trim(s: string): string;
+  function truncate(s: string, maxLength: number): string;
+  function slugify(s: string): string;
+}
+```
+
+## Ambient module declarations
+
+Use `declare module "..."` to declare the types for a package that has no type definitions:
+
+```typescript types/legacy-pkg.d.ts
+declare module 'legacy-analytics' {
+  export interface TrackOptions {
+    event: string;
+    userId?: string;
+    properties?: Record<string, unknown>;
+  }
+
+  export function track(options: TrackOptions): void;
+  export function identify(userId: string): void;
+}
+```
+
+For any module whose internals you do not want to type (a quick escape hatch), use a wildcard:
+
+```typescript
+declare module '*.svg' {
+  const content: string;
+  export default content;
+}
+
+declare module '*.png' {
+  const content: string;
+  export default content;
+}
+```
+
+## Triple-slash reference directives
+
+Triple-slash directives are single-line comments at the top of a file that instruct the compiler to include additional files or type definitions.
+
+```typescript
+/// <reference types="node" />
+/// <reference lib="dom" />
+/// <reference path="./extra-types.d.ts" />
+```
+
+| Directive | Purpose |
+| --- | --- |
+| `/// <reference types="node" />` | Includes `@types/node` in this file's scope |
+| `/// <reference lib="dom" />` | Includes the built-in DOM lib types |
+| `/// <reference path="..." />` | Includes another `.d.ts` file by path |
+
+<Note>
+  In modern projects with `tsconfig.json`, you rarely need triple-slash directives. They are most useful in standalone `.d.ts` files that are not part of a TypeScript project.
+</Note>
+
+## Augmenting existing types
+
+You can extend the types of installed packages using module augmentation. This is useful when you add custom properties to an Express `Request` or extend a library's interface.
+
+```typescript types/express-augmentation.d.ts
+import 'express';
+
+declare module 'express' {
+  interface Request {
+    user?: {
+      id: string;
+      email: string;
+      roles: string[];
+    };
+  }
+}
+```
+
+For global augmentation (adding to the global scope):
+
+```typescript types/globals.d.ts
+declare global {
+  interface Window {
+    analytics: {
+      track(event: string, properties?: Record<string, unknown>): void;
+    };
+  }
+
+  const __DEV__: boolean;
+}
+
+export {}; // makes this file a module, required for declare global
+```
+
+## Publishing declaration files with your package
+
+<Steps>
+  <Step title="Enable declaration output">
+    Set `"declaration": true` in `tsconfig.json` and optionally `"declarationDir"` to separate types from compiled JavaScript.
+  </Step>
+
+  <Step title="Include .d.ts files in your package">
+    Ensure your `.d.ts` files are included in the `files` array in `package.json`:
+
+    ```json
+    {
+      "files": ["dist"],
+      "main": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+    ```
+  </Step>
+
+  <Step title="Point to the entry declaration file">
+    Use the `types` (or `typings`) field in `package.json` to tell TypeScript where to find the root declaration file for your package.
+  </Step>
+
+  <Step title="Verify with a local consumer">
+    In a separate project, install your package with `npm install ../your-package` and confirm that types resolve correctly by checking editor auto-complete and running `tsc`.
+  </Step>
+</Steps>
+
+## Compiler options reference
+
+| Option | Type | Description |
+| --- | --- | --- |
+| `declaration` | `boolean` | Emit `.d.ts` files alongside compiled JavaScript |
+| `declarationDir` | `string` | Output directory for generated `.d.ts` files |
+| `declarationMap` | `boolean` | Emit `.d.ts.map` sourcemaps so editors go-to-definition lands in the `.ts` source |
+| `emitDeclarationOnly` | `boolean` | Emit only `.d.ts` files, not `.js` — useful when another tool handles JS transpilation |
+| `stripInternal` | `boolean` | Exclude declarations marked `@internal` in JSDoc |

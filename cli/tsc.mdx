@@ -1,0 +1,266 @@
+---
+title: 'tsc'
+description: 'The TypeScript compiler CLI. Compile TypeScript files, check types, and configure output with command-line flags.'
+keywords: ['tsc', 'typescript compiler', 'cli', 'command line', 'compile']
+---
+
+The `tsc` command is the TypeScript compiler. You use it to compile `.ts` and `.tsx` files to JavaScript, check types, emit declaration files, and generate source maps.
+
+## Basic usage
+
+```bash
+# Type-check and compile using tsconfig.json in the current directory
+tsc
+
+# Compile a single file directly
+tsc file.ts
+
+# Compile using a specific config file
+tsc --project tsconfig.json
+
+# Compile using a directory that contains a tsconfig.json
+tsc --project ./src
+
+# Print the TypeScript version
+tsc --version
+
+# Print help
+tsc --help
+```
+
+<Note>
+When you pass individual files on the command line (e.g. `tsc file.ts`), TypeScript ignores any `tsconfig.json` in the directory. Pass `--project` to use a config file.
+</Note>
+
+## Common workflows
+
+<Steps>
+  <Step title="Initialize a project">
+    ```bash
+    tsc --init
+    ```
+    Creates a `tsconfig.json` with commented-out defaults in the current directory.
+  </Step>
+  <Step title="Compile and watch">
+    ```bash
+    tsc --watch
+    ```
+    Recompiles automatically whenever source files change.
+  </Step>
+  <Step title="Type-check without emitting">
+    ```bash
+    tsc --noEmit
+    ```
+    Runs the full type-checker but produces no output files. Useful in CI or as a pre-commit check.
+  </Step>
+  <Step title="Build with project references">
+    ```bash
+    tsc --build
+    ```
+    Compiles the project and all referenced sub-projects in the correct dependency order.
+  </Step>
+</Steps>
+
+## CLI flags reference
+
+### Command-line options
+
+<ParamField path="--version" type="boolean" default="false">
+  Alias: `-v`. Print the compiler version and exit.
+</ParamField>
+
+<ParamField path="--help" type="boolean" default="false">
+  Aliases: `-h`, `-?`. Print the help message and exit. Add `--all` to show every option.
+</ParamField>
+
+<ParamField path="--init" type="boolean" default="false">
+  Generate a `tsconfig.json` with default values in the current directory.
+</ParamField>
+
+<ParamField path="--project" type="string">
+  Alias: `-p`. Path to a `tsconfig.json` file or to a directory that contains one. When omitted, TypeScript searches the current directory and walks up the folder tree.
+</ParamField>
+
+<ParamField path="--watch" type="boolean" default="false">
+  Alias: `-w`. Enter watch mode and recompile on file changes. See [Watch mode](/cli/watch-mode) for details.
+</ParamField>
+
+<ParamField path="--build" type="boolean" default="false">
+  Alias: `-b`. Build the project and its dependencies using project references. See [Build mode](/cli/build-mode) for details.
+</ParamField>
+
+<ParamField path="--showConfig" type="boolean" default="false">
+  Print the resolved `tsconfig.json` that would be used, then exit without compiling.
+</ParamField>
+
+<ParamField path="--listFilesOnly" type="boolean" default="false">
+  Print the names of files that would be included in the compilation, then exit.
+</ParamField>
+
+<ParamField path="--ignoreConfig" type="boolean" default="false">
+  Ignore any discovered `tsconfig.json` and compile only with the flags and files you supply on the command line.
+</ParamField>
+
+<ParamField path="--locale" type="string" default="platform default">
+  Set the language for compiler messages (e.g. `de`, `ja`). Does not affect emitted output.
+</ParamField>
+
+### Language and environment
+
+<ParamField path="--target" type="string" default="ES2015" placeholder="ES5 | ES2015 | ES2016 | ... | ESNext">
+  Alias: `-t`. Set the JavaScript version for emitted output and included library declarations.
+
+  Valid values (from `commandLineParser.ts`): `ES3` (deprecated), `ES5` (deprecated), `ES6`/`ES2015`, `ES2016`, `ES2017`, `ES2018`, `ES2019`, `ES2020`, `ES2021`, `ES2022`, `ES2023`, `ES2024`, `ES2025`, `ESNext`.
+</ParamField>
+
+<ParamField path="--module" type="string" placeholder="CommonJS | ESNext | NodeNext | Preserve | ...">
+  Alias: `-m`. Specify the module system for emitted JavaScript.
+
+  Valid values: `CommonJS`, `ES6`/`ES2015`, `ES2020`, `ES2022`, `ESNext`, `Node16`, `Node18`, `Node20`, `NodeNext`, `Preserve`. (`None`, `AMD`, `System`, `UMD` are deprecated.)
+</ParamField>
+
+<ParamField path="--jsx" type="string" placeholder="preserve | react | react-jsx | react-jsxdev | react-native">
+  Specify how JSX constructs are emitted. `react-jsx` and `react-jsxdev` use the modern JSX transform.
+</ParamField>
+
+<ParamField path="--lib" type="string[]">
+  A list of bundled library declaration files to include. When omitted, TypeScript infers a default set from `--target`.
+
+  Example values: `ES2015`, `ES2022`, `DOM`, `DOM.Iterable`, `WebWorker`, `ESNext`.
+</ParamField>
+
+### Type checking
+
+<ParamField path="--strict" type="boolean" default="true">
+  Enable all strict type-checking options as a group: `noImplicitAny`, `strictNullChecks`, `strictFunctionTypes`, `strictBindCallApply`, `strictPropertyInitialization`, `noImplicitThis`, `useUnknownInCatchVariables`, `strictBuiltinIteratorReturn`.
+</ParamField>
+
+<ParamField path="--noEmitOnError" type="boolean" default="false">
+  Do not emit output files if any type-checking errors are reported.
+</ParamField>
+
+<ParamField path="--noCheck" type="boolean" default="false">
+  Disable full type checking. Only critical parse and emit errors are reported. Useful for fast builds when type safety is handled separately.
+</ParamField>
+
+### Emit
+
+<ParamField path="--outDir" type="string">
+  Redirect all emitted files into this directory, preserving the source tree structure.
+</ParamField>
+
+<ParamField path="--outFile" type="string">
+  Bundle all emitted output into a single JavaScript file. When `--declaration` is also set, all `.d.ts` output is bundled into a matching file.
+</ParamField>
+
+<ParamField path="--noEmit" type="boolean" default="false">
+  Run the type-checker but do not write any output files to disk.
+</ParamField>
+
+<ParamField path="--declaration" type="boolean" default="false unless composite is set">
+  Alias: `-d`. Generate `.d.ts` declaration files alongside emitted JavaScript.
+</ParamField>
+
+<ParamField path="--declarationMap" type="boolean" default="false">
+  Generate source maps for `.d.ts` files.
+</ParamField>
+
+<ParamField path="--emitDeclarationOnly" type="boolean" default="false">
+  Emit only `.d.ts` files; do not emit JavaScript.
+</ParamField>
+
+<ParamField path="--sourceMap" type="boolean" default="false">
+  Generate `.js.map` source map files alongside emitted JavaScript.
+</ParamField>
+
+<ParamField path="--inlineSourceMap" type="boolean" default="false">
+  Embed the source map as a data URL comment at the bottom of each emitted JavaScript file instead of creating a separate `.map` file.
+</ParamField>
+
+<ParamField path="--removeComments" type="boolean" default="false">
+  Strip all comments from emitted JavaScript output.
+</ParamField>
+
+<ParamField path="--incremental" type="boolean" default="false unless composite is set">
+  Alias: `-i`. Save `.tsbuildinfo` files to allow faster incremental recompilation.
+</ParamField>
+
+### JavaScript support
+
+<ParamField path="--allowJs" type="boolean" default="false unless checkJs is set">
+  Allow `.js` and `.jsx` files to be part of your program.
+</ParamField>
+
+<ParamField path="--checkJs" type="boolean" default="false">
+  Enable type-error reporting in `.js` files. Implies `--allowJs`.
+</ParamField>
+
+### Interop
+
+<ParamField path="--esModuleInterop" type="boolean" default="true">
+  Emit additional helpers to ease importing CommonJS modules with ES module `import` syntax. Also enables `allowSyntheticDefaultImports`.
+</ParamField>
+
+<ParamField path="--skipLibCheck" type="boolean" default="false">
+  Skip type-checking all `.d.ts` declaration files, including those in `node_modules`. Speeds up compilation at the cost of type safety for third-party types.
+</ParamField>
+
+<ParamField path="--isolatedModules" type="boolean" default="false">
+  Require each file to be safely transpilable without knowledge of other files. Necessary when using transpilers like Babel or esbuild.
+</ParamField>
+
+<ParamField path="--verbatimModuleSyntax" type="boolean" default="false">
+  Do not transform or elide imports or exports unless they are marked `type`-only. The output format follows the `--module` setting.
+</ParamField>
+
+### Diagnostics
+
+<ParamField path="--listFiles" type="boolean" default="false">
+  Print all files read during compilation.
+</ParamField>
+
+<ParamField path="--pretty" type="boolean" default="true">
+  Enable colors and formatting in error output.
+</ParamField>
+
+<ParamField path="--diagnostics" type="boolean" default="false">
+  Print compiler performance statistics after building.
+</ParamField>
+
+<ParamField path="--extendedDiagnostics" type="boolean" default="false">
+  Print detailed compiler performance statistics after building.
+</ParamField>
+
+<ParamField path="--traceResolution" type="boolean" default="false">
+  Log every path tried during module resolution.
+</ParamField>
+
+## Example: common tsconfig workflows
+
+<CodeGroup>
+
+```bash Type-check only
+tsc --noEmit --project tsconfig.json
+```
+
+```bash Compile to CommonJS
+tsc --module commonjs --outDir dist
+```
+
+```bash Compile for the browser
+tsc --target ES2020 --module ES2020 --outDir dist
+```
+
+```bash Generate declaration files
+tsc --declaration --declarationMap --outDir dist
+```
+
+```bash Watch and emit
+tsc --watch --outDir dist
+```
+
+</CodeGroup>
+
+<Tip>
+Most projects keep all compiler options in `tsconfig.json` rather than passing them on the command line. Run `tsc --showConfig` to see the final resolved options.
+</Tip>

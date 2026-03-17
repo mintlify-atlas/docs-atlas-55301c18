@@ -1,0 +1,485 @@
+---
+title: Utility types
+description: A complete reference for all TypeScript built-in utility types with real-world examples, organized by category.
+keywords: [utility types, Partial, Required, Readonly, Record, Pick, Omit, Exclude, Extract, NonNullable, ReturnType, Parameters]
+---
+
+TypeScript ships a set of built-in generic utility types that transform existing types into new ones. They are available globally without any import. All definitions live in `lib/es5.d.ts` in the TypeScript compiler source.
+
+## Object transformation
+
+### Partial\<T\>
+
+**Definition:** `type Partial<T> = { [P in keyof T]?: T[P]; }`
+
+Makes all properties of `T` optional. Use it when you want to accept a subset of an object's fields — for example, in an update/patch function.
+
+```typescript twoslash
+interface User {
+  id: number;
+  name: string;
+  email: string;
+  role: 'admin' | 'editor' | 'viewer';
+}
+
+function updateUser(id: number, patch: Partial<User>): Promise<User> {
+  // Only the supplied fields are updated
+  return fetch(`/api/users/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  }).then(r => r.json());
+}
+
+// Call with only the fields you want to change
+await updateUser(1, { name: 'Alice', role: 'admin' });
+```
+
+### Required\<T\>
+
+**Definition:** `type Required<T> = { [P in keyof T]-?: T[P]; }`
+
+Makes all properties of `T` required, removing the `?` modifier. The `-?` syntax explicitly removes optionality. Use it when a function needs a fully-populated object after defaults have been applied.
+
+```typescript twoslash
+interface Config {
+  timeout?: number;
+  retries?: number;
+  baseUrl?: string;
+}
+
+const DEFAULT_CONFIG: Required<Config> = {
+  timeout: 5000,
+  retries: 3,
+  baseUrl: 'https://api.example.com',
+};
+
+function buildConfig(overrides: Config): Required<Config> {
+  return { ...DEFAULT_CONFIG, ...overrides };
+}
+```
+
+### Readonly\<T\>
+
+**Definition:** `type Readonly<T> = { readonly [P in keyof T]: T[P]; }`
+
+Makes all properties of `T` read-only. The compiler will reject any mutation after the initial assignment.
+
+```typescript twoslash
+// @errors: 2540
+interface AppState {
+  user: { id: number; name: string };
+  theme: 'light' | 'dark';
+  locale: string;
+}
+
+function render(state: Readonly<AppState>): void {
+  console.log(state.user.name);
+  state.theme = 'dark'; // Error: cannot assign to 'theme' because it is read-only
+}
+```
+
+<Note>
+  `Readonly<T>` is shallow. Nested objects remain mutable unless you also wrap them with `Readonly`.
+</Note>
+
+### Record\<K, T\>
+
+**Definition:** `type Record<K extends keyof any, T> = { [P in K]: T; }`
+
+Constructs a type with keys of type `K` and values of type `T`. Use it for dictionaries, lookup tables, and maps where the key set is known.
+
+```typescript twoslash
+type HttpStatus = 200 | 201 | 400 | 401 | 403 | 404 | 500;
+
+const statusMessages: Record<HttpStatus, string> = {
+  200: 'OK',
+  201: 'Created',
+  400: 'Bad Request',
+  401: 'Unauthorized',
+  403: 'Forbidden',
+  404: 'Not Found',
+  500: 'Internal Server Error',
+};
+
+// With a union as the key
+type Locale = 'en' | 'fr' | 'de' | 'ja';
+const translations: Record<Locale, { greeting: string }> = {
+  en: { greeting: 'Hello' },
+  fr: { greeting: 'Bonjour' },
+  de: { greeting: 'Hallo' },
+  ja: { greeting: 'こんにちは' },
+};
+```
+
+### Pick\<T, K\>
+
+**Definition:** `type Pick<T, K extends keyof T> = { [P in K]: T[P]; }`
+
+Constructs a type by selecting only the properties `K` from `T`. Use it to create a narrower view of a larger type.
+
+```typescript twoslash
+interface Article {
+  id: number;
+  title: string;
+  body: string;
+  authorId: number;
+  publishedAt: Date;
+  tags: string[];
+}
+
+// Only the fields needed for a list view
+type ArticleSummary = Pick<Article, 'id' | 'title' | 'publishedAt' | 'tags'>;
+
+function renderList(articles: ArticleSummary[]): void {
+  articles.forEach(a => console.log(`[${a.publishedAt.toDateString()}] ${a.title}`));
+}
+```
+
+### Omit\<T, K\>
+
+**Definition:** `type Omit<T, K extends keyof any> = Pick<T, Exclude<keyof T, K>>`
+
+The inverse of `Pick`. Constructs a type with all properties of `T` except those in `K`. Use it when you want to exclude a few known properties from a large type.
+
+```typescript twoslash
+interface User {
+  id: number;
+  name: string;
+  email: string;
+  passwordHash: string;
+  createdAt: Date;
+}
+
+// Safe to return from an API — exclude sensitive fields
+type PublicUser = Omit<User, 'passwordHash'>;
+
+function serializeUser(user: User): PublicUser {
+  const { passwordHash, ...publicData } = user;
+  return publicData;
+}
+```
+
+## Union and conditional
+
+### Exclude\<T, U\>
+
+**Definition:** `type Exclude<T, U> = T extends U ? never : T`
+
+From union `T`, removes all members that are assignable to `U`. Use it to filter out unwanted members of a union.
+
+```typescript twoslash
+type AllEvents = 'click' | 'focus' | 'blur' | 'keydown' | 'keyup' | 'submit';
+type KeyboardEvents = 'keydown' | 'keyup';
+type NonKeyboardEvents = Exclude<AllEvents, KeyboardEvents>;
+//   ^ 'click' | 'focus' | 'blur' | 'submit'
+
+// Practical: remove null/undefined from a union manually
+type MaybeString = string | null | undefined;
+type DefinitelyString = Exclude<MaybeString, null | undefined>;
+//   ^ string
+```
+
+### Extract\<T, U\>
+
+**Definition:** `type Extract<T, U> = T extends U ? T : never`
+
+The inverse of `Exclude`. Keeps only members of `T` that are assignable to `U`.
+
+```typescript twoslash
+type Shape =
+  | { kind: 'circle'; radius: number }
+  | { kind: 'rectangle'; width: number; height: number }
+  | { kind: 'triangle'; base: number; height: number };
+
+type RectOrTriangle = Extract<Shape, { kind: 'rectangle' | 'triangle' }>;
+//   ^ { kind: 'rectangle'; width: number; height: number }
+//   | { kind: 'triangle'; base: number; height: number }
+```
+
+### NonNullable\<T\>
+
+**Definition:** `type NonNullable<T> = T & {}`
+
+Removes `null` and `undefined` from `T`. The implementation uses an intersection with `{}` — since `null` and `undefined` are not assignable to `{}`, they are filtered out.
+
+```typescript twoslash
+type MaybeUserId = string | null | undefined;
+type UserId = NonNullable<MaybeUserId>;
+//   ^ string
+
+// Useful when you know a value has been validated
+function requireValue<T>(value: T): NonNullable<T> {
+  if (value == null) throw new Error('Value is required');
+  return value as NonNullable<T>;
+}
+
+const rawId: string | undefined = process.env.USER_ID;
+const userId: string = requireValue(rawId);
+```
+
+## Function types
+
+### Parameters\<T\>
+
+**Definition:** `type Parameters<T extends (...args: any) => any> = T extends (...args: infer P) => any ? P : never`
+
+Extracts the parameter types of a function type as a tuple. Use it to build wrapper functions that forward arguments without duplicating the signature.
+
+```typescript twoslash
+function createUser(name: string, email: string, role: 'admin' | 'viewer'): void {
+  console.log(name, email, role);
+}
+
+type CreateUserArgs = Parameters<typeof createUser>;
+//   ^ [name: string, email: string, role: 'admin' | 'viewer']
+
+function auditedCreateUser(...args: Parameters<typeof createUser>): void {
+  console.log('Creating user:', args[0]);
+  createUser(...args);
+}
+```
+
+### ReturnType\<T\>
+
+**Definition:** `type ReturnType<T extends (...args: any) => any> = T extends (...args: any) => infer R ? R : any`
+
+Extracts the return type of a function type. Use it when the return type is complex or you want to stay in sync with a function signature you do not control.
+
+```typescript twoslash
+async function fetchOrder(id: string) {
+  const res = await fetch(`/api/orders/${id}`);
+  return res.json() as Promise<{
+    id: string;
+    items: Array<{ sku: string; qty: number }>;
+    total: number;
+  }>;
+}
+
+type Order = Awaited<ReturnType<typeof fetchOrder>>;
+//   ^ { id: string; items: Array<{ sku: string; qty: number }>; total: number }
+```
+
+### ConstructorParameters\<T\>
+
+**Definition:** `type ConstructorParameters<T extends abstract new (...args: any) => any> = T extends abstract new (...args: infer P) => any ? P : never`
+
+Extracts constructor parameter types as a tuple. Useful for factory functions and dependency injection.
+
+```typescript twoslash
+class HttpClient {
+  constructor(
+    readonly baseUrl: string,
+    readonly timeout: number,
+    readonly apiKey: string,
+  ) {}
+}
+
+type HttpClientArgs = ConstructorParameters<typeof HttpClient>;
+//   ^ [baseUrl: string, timeout: number, apiKey: string]
+
+function createHttpClient(...args: ConstructorParameters<typeof HttpClient>): HttpClient {
+  return new HttpClient(...args);
+}
+```
+
+### InstanceType\<T\>
+
+**Definition:** `type InstanceType<T extends abstract new (...args: any) => any> = T extends abstract new (...args: any) => infer R ? R : any`
+
+Extracts the instance type of a constructor function. Use it when you have a class constructor stored in a variable and need to type its instances.
+
+```typescript twoslash
+class Repository<T extends { id: string }> {
+  private items: T[] = [];
+  save(item: T): void { this.items.push(item); }
+  findById(id: string): T | undefined { return this.items.find(i => i.id === id); }
+}
+
+type RepoInstance = InstanceType<typeof Repository>;
+//   ^ Repository<{ id: string }>
+
+// Practical: a registry that maps class constructors to instances
+const registry = new Map<Function, InstanceType<typeof Repository>>();
+```
+
+## Promise
+
+### Awaited\<T\>
+
+**Definition:**
+```typescript
+type Awaited<T> = T extends null | undefined ? T :
+  T extends object & { then(onfulfilled: infer F, ...args: infer _): any; } ?
+    F extends ((value: infer V, ...args: infer _) => any) ?
+      Awaited<V> :
+    never :
+  T;
+```
+
+Recursively unwraps the awaited type of a promise or thenable. Use it to get the resolved value type of a `Promise<T>` without calling `await`.
+
+```typescript twoslash
+type A = Awaited<Promise<string>>;
+//   ^ string
+
+type B = Awaited<Promise<Promise<number>>>;
+//   ^ number (recursive unwrapping)
+
+type C = Awaited<string | Promise<boolean>>;
+//   ^ string | boolean
+
+async function loadConfig() {
+  return { debug: true, logLevel: 'info' as const };
+}
+
+type Config = Awaited<ReturnType<typeof loadConfig>>;
+//   ^ { debug: boolean; logLevel: 'info' }
+```
+
+## String manipulation
+
+All four string manipulation types are **intrinsic** — implemented in the compiler itself rather than via TypeScript type algebra. They only operate on string literal types.
+
+### Uppercase\<S\>
+
+**Definition:** `type Uppercase<S extends string> = intrinsic`
+
+```typescript twoslash
+type EventName = 'click' | 'focus' | 'blur';
+type EventHandler = `on${Uppercase<EventName>}`;
+//   ^ 'onClick' | 'onFocus' | 'onBlur'
+
+// Type-safe event emitter key pattern
+type Emitter<Events extends Record<string, unknown[]>> = {
+  on<K extends keyof Events>(event: K, handler: (...args: Events[K]) => void): void;
+  emit<K extends keyof Events>(event: K, ...args: Events[K]): void;
+};
+```
+
+### Lowercase\<S\>
+
+**Definition:** `type Lowercase<S extends string> = intrinsic`
+
+```typescript twoslash
+type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+type FetchMethod = Lowercase<HttpMethod>;
+//   ^ 'get' | 'post' | 'put' | 'delete' | 'patch'
+
+const client = {
+  get: (url: string) => fetch(url, { method: 'GET' }),
+  post: (url: string, body: unknown) => fetch(url, { method: 'POST', body: JSON.stringify(body) }),
+} satisfies Partial<Record<FetchMethod, Function>>;
+```
+
+### Capitalize\<S\>
+
+**Definition:** `type Capitalize<S extends string> = intrinsic`
+
+Upcases only the first character.
+
+```typescript twoslash
+type Fields = 'name' | 'email' | 'password';
+type Getters = `get${Capitalize<Fields>}`;
+//   ^ 'getName' | 'getEmail' | 'getPassword'
+
+type Setters = `set${Capitalize<Fields>}`;
+//   ^ 'setName' | 'setEmail' | 'setPassword'
+```
+
+### Uncapitalize\<S\>
+
+**Definition:** `type Uncapitalize<S extends string> = intrinsic`
+
+Lowercases only the first character. Useful for converting PascalCase type names to camelCase.
+
+```typescript twoslash
+type ComponentName = 'Button' | 'Input' | 'Select';
+type PropKey = `${Uncapitalize<ComponentName>}Props`;
+//   ^ 'buttonProps' | 'inputProps' | 'selectProps'
+```
+
+## Intrinsic / `this`-related
+
+### ThisType\<T\>
+
+**Definition:** `interface ThisType<T> {}`
+
+`ThisType<T>` is a marker interface — it carries no members. When you include it in an intersection type, it sets the type of `this` within method bodies of that object. It is most useful for defining mixin factories or option object patterns where `this` inside methods should refer to a specific type.
+
+```typescript twoslash
+type ObjectDescriptor<D, M> = {
+  data?: D;
+  methods?: M & ThisType<D & M>;
+};
+
+function makeObject<D, M>(desc: ObjectDescriptor<D, M>): D & M {
+  const data = Object.assign({}, desc.data);
+  const methods = Object.assign({}, desc.methods);
+  return Object.assign(data, methods) as D & M;
+}
+
+const obj = makeObject({
+  data: { x: 0, y: 0 },
+  methods: {
+    moveBy(dx: number, dy: number) {
+      this.x += dx; // 'this' is typed as { x: number; y: number } & { moveBy(...): void }
+      this.y += dy;
+    },
+  },
+});
+
+obj.moveBy(5, 10);
+console.log(obj.x, obj.y); // 5 10
+```
+
+### ThisParameterType\<T\>
+
+**Definition:** `type ThisParameterType<T> = T extends (this: infer U, ...args: never) => any ? U : unknown`
+
+Extracts the type of the explicit `this` parameter of a function. Returns `unknown` if the function has no `this` parameter.
+
+```typescript twoslash
+function toHex(this: Number): string {
+  return this.toString(16);
+}
+
+type ThisOfToHex = ThisParameterType<typeof toHex>;
+//   ^ Number
+```
+
+### OmitThisParameter\<T\>
+
+**Definition:** `type OmitThisParameter<T> = unknown extends ThisParameterType<T> ? T : T extends (...args: infer A) => infer R ? (...args: A) => R : T`
+
+Removes the explicit `this` parameter from a function type. The resulting type is a plain function with only the regular parameters.
+
+```typescript twoslash
+function toHex(this: Number): string {
+  return this.toString(16);
+}
+
+type BoundToHex = OmitThisParameter<typeof toHex>;
+//   ^ () => string
+
+const hex: BoundToHex = toHex.bind(255);
+console.log(hex()); // 'ff'
+```
+
+### NoInfer\<T\>
+
+**Definition:** `type NoInfer<T> = intrinsic` *(added in TypeScript 5.4)*
+
+Prevents TypeScript from using a type position to infer `T`. Use it to control which call-site argument “wins” type inference when a generic function has multiple inference sites.
+
+```typescript twoslash
+// Without NoInfer, TypeScript infers T from both 'items' and 'default',
+// which can widen the type unexpectedly.
+function pickFirst<T>(items: T[], fallback: NoInfer<T>): T {
+  return items[0] ?? fallback;
+}
+
+// T is inferred as 'apple' | 'banana' from 'items' only.
+// The fallback must be compatible with that inference.
+const fruit = pickFirst(['apple', 'banana'] as const, 'apple');
+// pickFirst(['apple', 'banana'] as const, 'cherry'); // Error
+```

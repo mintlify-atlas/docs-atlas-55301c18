@@ -1,0 +1,300 @@
+---
+title: Decorators
+description: Add metadata and behavior to classes, methods, properties, accessors, and parameters using TypeScript's decorator support based on the TC39 Stage 3 proposal.
+keywords: ['typescript', 'decorators', 'class decorators', 'method decorators', 'property decorators', 'decorator factories', 'decorator metadata']
+---
+
+Decorators are a special syntax for attaching metadata and modifying the behavior of classes and their members. TypeScript supports two decorator systems: the modern ECMAScript decorators (TC39 Stage 3 proposal, enabled by default) and the legacy `experimentalDecorators` system.
+
+<Note>
+This page covers the **modern ECMAScript decorators** introduced in TypeScript 5.0, which align with the TC39 Stage 3 proposal. For the legacy system (`experimentalDecorators: true`), see the tsconfig reference.
+</Note>
+
+## Enabling decorators
+
+Modern decorators are available by default in TypeScript 5.0 and later — no special `tsconfig.json` option is required. To emit decorator metadata (needed for frameworks like Angular and NestJS), enable `emitDecoratorMetadata`:
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "experimentalDecorators": false,
+    "emitDecoratorMetadata": true
+  }
+}
+```
+
+<Warning>
+Do not mix `experimentalDecorators: true` with modern decorators. They are incompatible systems. Pick one and use it consistently.
+</Warning>
+
+## What decorators are
+
+A decorator is a function that is called with information about the thing it decorates. Decorators are applied at class definition time (not instantiation time).
+
+The general shapes are:
+
+| Decorator target | Function signature |
+|------------------|-----------------|
+| Class | `(target: typeof MyClass, context: ClassDecoratorContext) => void \| typeof MyClass` |
+| Method | `(target: Function, context: ClassMethodDecoratorContext) => void \| Function` |
+| Field/Property | `(target: undefined, context: ClassFieldDecoratorContext) => void \| initializer` |
+| Getter/Setter | `(target: Function, context: ClassGetterDecoratorContext \| ClassSetterDecoratorContext) => void \| Function` |
+| Accessor | `(target: ClassAccessorDecoratorTarget, context: ClassAccessorDecoratorContext) => void \| ClassAccessorDecoratorResult` |
+
+## Class decorators
+
+A class decorator receives the class constructor and a context object. You can return a new class to replace the original:
+
+```typescript twoslash
+function sealed(target: typeof Base, context: ClassDecoratorContext) {
+  Object.seal(target);
+  Object.seal(target.prototype);
+}
+
+@sealed
+class Base {
+  greet() {
+    return "hello";
+  }
+}
+```
+
+To replace the class, return a subclass:
+
+```typescript twoslash
+function logged<T extends new (...args: any[]) => object>(
+  target: T,
+  context: ClassDecoratorContext
+) {
+  return class extends target {
+    constructor(...args: any[]) {
+      console.log(`Creating ${context.name}`);
+      super(...args);
+    }
+  };
+}
+
+@logged
+class Service {
+  name = "my-service";
+}
+
+const s = new Service(); // logs: "Creating Service"
+```
+
+## Method decorators
+
+Method decorators receive the method function and a context object. Return a new function to replace the method:
+
+```typescript twoslash
+function measure(
+  target: Function,
+  context: ClassMethodDecoratorContext
+) {
+  return function (this: unknown, ...args: unknown[]) {
+    const start = performance.now();
+    const result = (target as Function).apply(this, args);
+    const end = performance.now();
+    console.log(`${String(context.name)} took ${(end - start).toFixed(2)}ms`);
+    return result;
+  };
+}
+
+class DataProcessor {
+  @measure
+  process(items: number[]): number[] {
+    return items.map((x) => x * 2);
+  }
+}
+```
+
+### Retry decorator
+
+```typescript twoslash
+function retry(maxAttempts: number) {
+  return function (
+    target: Function,
+    context: ClassMethodDecoratorContext
+  ) {
+    return async function (this: unknown, ...args: unknown[]) {
+      let lastError: unknown;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          return await (target as Function).apply(this, args);
+        } catch (err) {
+          lastError = err;
+          console.log(`Attempt ${attempt} failed for ${String(context.name)}`);
+        }
+      }
+      throw lastError;
+    };
+  };
+}
+
+class ApiClient {
+  @retry(3)
+  async fetchData(url: string): Promise<unknown> {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  }
+}
+```
+
+## Property decorators
+
+Field decorators receive `undefined` as the first argument (the field has no value at decoration time) and the context object. Return an initializer function to customize the field's value:
+
+```typescript twoslash
+function uppercase(
+  target: undefined,
+  context: ClassFieldDecoratorContext
+) {
+  return function (this: unknown, initialValue: string): string {
+    return typeof initialValue === "string"
+      ? initialValue.toUpperCase()
+      : initialValue;
+  };
+}
+
+class Config {
+  @uppercase
+  environment = "development";
+}
+
+const config = new Config();
+console.log(config.environment); // "DEVELOPMENT"
+```
+
+## Accessor decorators
+
+The `accessor` keyword creates an auto-accessor — a combined getter/setter backed by a private field. Accessor decorators receive a `{ get, set }` object and can return a replacement:
+
+```typescript twoslash
+function clamp(min: number, max: number) {
+  return function (
+    target: ClassAccessorDecoratorTarget<unknown, number>,
+    context: ClassAccessorDecoratorContext
+  ): ClassAccessorDecoratorResult<unknown, number> {
+    return {
+      get(this: unknown): number {
+        return target.get.call(this);
+      },
+      set(this: unknown, value: number): void {
+        target.set.call(this, Math.min(Math.max(value, min), max));
+      },
+    };
+  };
+}
+
+class Temperature {
+  @clamp(-273.15, 1.416e32)
+  accessor celsius = 20;
+}
+
+const t = new Temperature();
+t.celsius = -300; // clamped to -273.15
+console.log(t.celsius); // -273.15
+```
+
+## Decorator factories
+
+A decorator factory is a function that returns a decorator. This lets you parameterize your decorators:
+
+```typescript twoslash
+function deprecated(message: string) {
+  return function (
+    target: Function,
+    context: ClassMethodDecoratorContext
+  ) {
+    return function (this: unknown, ...args: unknown[]) {
+      console.warn(
+        `Warning: ${String(context.name)} is deprecated. ${message}`
+      );
+      return (target as Function).apply(this, args);
+    };
+  };
+}
+
+class OldApi {
+  @deprecated("Use newMethod() instead.")
+  oldMethod(): void {
+    console.log("doing old thing");
+  }
+
+  newMethod(): void {
+    console.log("doing new thing");
+  }
+}
+```
+
+## Decorator metadata
+
+Decorators can attach metadata to classes via `context.metadata`. All decorators on a class share the same metadata object:
+
+```typescript twoslash
+const REQUIRED_KEY = Symbol("required");
+
+function required(
+  target: undefined,
+  context: ClassFieldDecoratorContext
+) {
+  context.metadata[REQUIRED_KEY] ??= [];
+  (context.metadata[REQUIRED_KEY] as string[]).push(String(context.name));
+}
+
+class Form {
+  @required
+  name = "";
+
+  @required
+  email = "";
+
+  phone = "";
+}
+
+const requiredFields = Form[Symbol.metadata]?.[REQUIRED_KEY] as string[];
+console.log(requiredFields); // ["name", "email"]
+```
+
+## Decorator execution order
+
+When multiple decorators apply to a single declaration, they execute in the following order:
+
+<Steps>
+  <Step title="Evaluation top-to-bottom">
+    Decorator expressions are evaluated from top to bottom (outer to inner).
+  </Step>
+  <Step title="Application bottom-to-top">
+    The resulting decorator functions are called from bottom to top (inner to outer), like function composition.
+  </Step>
+</Steps>
+
+```typescript twoslash
+function first() {
+  console.log("first() evaluated");
+  return function (_: Function, __: ClassMethodDecoratorContext) {
+    console.log("first() called");
+  };
+}
+
+function second() {
+  console.log("second() evaluated");
+  return function (_: Function, __: ClassMethodDecoratorContext) {
+    console.log("second() called");
+  };
+}
+
+class Example {
+  @first()
+  @second()
+  method() {}
+}
+
+// Output:
+// first() evaluated
+// second() evaluated
+// second() called
+// first() called
+```

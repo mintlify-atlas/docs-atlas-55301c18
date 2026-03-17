@@ -1,0 +1,301 @@
+---
+title: Types and interfaces
+description: Learn about TypeScript's type system — primitives, object types, unions, intersections, literal types, and when to choose type aliases over interfaces.
+keywords: ['typescript', 'types', 'interfaces', 'union types', 'intersection types', 'primitive types', 'type aliases']
+---
+
+TypeScript's type system lets you describe the shape of data at compile time. This page covers every category of type you'll encounter: primitives, object types, unions, intersections, literal types, and the special types `any`, `unknown`, and `never`.
+
+## Primitive types
+
+TypeScript models the seven JavaScript primitives as distinct types:
+
+| Type | Description | Example literal |
+|------|-------------|------------------|
+| `string` | Text data | `"hello"` |
+| `number` | IEEE 754 floating-point | `42`, `3.14` |
+| `boolean` | True or false | `true`, `false` |
+| `null` | Intentional absence of value | `null` |
+| `undefined` | Uninitialized or missing | `undefined` |
+| `symbol` | Unique, immutable identifier | `Symbol("id")` |
+| `bigint` | Arbitrary-precision integer | `9007199254740993n` |
+
+```typescript twoslash
+const name: string = "Alice";
+const age: number = 30;
+const active: boolean = true;
+const nothing: null = null;
+const missing: undefined = undefined;
+const id: symbol = Symbol("userId");
+const bigNum: bigint = 9007199254740993n;
+```
+
+<Tip>
+You rarely need to annotate primitives explicitly — TypeScript infers the type from the assigned value. Write `const name = "Alice"` and TypeScript knows it's a `string`.
+</Tip>
+
+## Type aliases vs. interfaces
+
+Both `type` and `interface` let you name a shape, but they have important differences.
+
+<Tabs>
+  <Tab title="Interface">
+```typescript twoslash
+interface User {
+  id: number;
+  name: string;
+  email?: string;
+}
+
+interface AdminUser extends User {
+  role: "admin";
+}
+```
+  </Tab>
+  <Tab title="Type alias">
+```typescript twoslash
+type User = {
+  id: number;
+  name: string;
+  email?: string;
+};
+
+type AdminUser = User & { role: "admin" };
+```
+  </Tab>
+</Tabs>
+
+**Key differences:**
+
+- **Declaration merging**: Interfaces support declaration merging — you can declare the same interface multiple times and TypeScript merges the definitions. Type aliases do not merge.
+- **Extends vs. intersections**: Interfaces use `extends` to inherit; type aliases use `&` (intersection).
+- **Non-object types**: Type aliases can represent any type, including unions and primitives. Interfaces can only describe object shapes.
+
+```typescript twoslash
+// Declaration merging — only possible with interfaces
+interface Window {
+  myProp: string;
+}
+interface Window {
+  myOtherProp: number;
+}
+// Window now has both myProp and myOtherProp
+
+// Type aliases can describe unions — interfaces cannot
+type StringOrNumber = string | number;
+type Falsy = false | 0 | "" | null | undefined;
+```
+
+<Note>
+Use `interface` when you're defining object shapes that may be extended or augmented (especially in libraries). Use `type` for unions, intersections, mapped types, and conditional types.
+</Note>
+
+## Object types
+
+Object types describe the shape of a JavaScript object.
+
+### Optional properties
+
+Mark a property optional with `?`. TypeScript treats it as `T | undefined`.
+
+```typescript twoslash
+interface Config {
+  host: string;
+  port?: number;    // number | undefined
+  timeout?: number; // number | undefined
+}
+
+const config: Config = { host: "localhost" }; // port and timeout are optional
+```
+
+### Readonly properties
+
+Mark a property `readonly` to prevent reassignment after initialization.
+
+```typescript twoslash
+interface Point {
+  readonly x: number;
+  readonly y: number;
+}
+
+const origin: Point = { x: 0, y: 0 };
+// @errors: 2540
+origin.x = 1; // Error: Cannot assign to 'x' because it is a read-only property
+```
+
+`readonly` is a compile-time constraint — it doesn't affect the emitted JavaScript.
+
+### Index signatures
+
+When the property names are dynamic, use an index signature:
+
+```typescript twoslash
+interface StringMap {
+  [key: string]: string;
+}
+
+const headers: StringMap = {
+  "Content-Type": "application/json",
+  "Authorization": "Bearer token",
+};
+```
+
+## Union types
+
+A union type (`A | B`) describes a value that can be one of several types. TypeScript narrows the type in control flow:
+
+```typescript twoslash
+function formatId(id: string | number): string {
+  if (typeof id === "number") {
+    // id is narrowed to number here
+    return id.toFixed(0);
+  }
+  // id is narrowed to string here
+  return id.trim();
+}
+```
+
+Unions work with any types, including object shapes:
+
+```typescript twoslash
+type Circle = { kind: "circle"; radius: number };
+type Square = { kind: "square"; side: number };
+type Shape = Circle | Square;
+
+function area(shape: Shape): number {
+  if (shape.kind === "circle") {
+    return Math.PI * shape.radius ** 2;
+  }
+  return shape.side ** 2;
+}
+```
+
+This pattern — a union with a shared discriminant property (`kind`) — is called a **discriminated union**.
+
+## Intersection types
+
+An intersection type (`A & B`) combines multiple types into one. The result must satisfy all constituent types simultaneously:
+
+```typescript twoslash
+interface Timestamped {
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+interface Named {
+  name: string;
+}
+
+type Entity = Named & Timestamped;
+
+const user: Entity = {
+  name: "Alice",
+  createdAt: new Date(),
+  updatedAt: new Date(),
+};
+```
+
+Intersections are most useful for composing mixins, merging types from separate concerns, and building up complex types incrementally.
+
+## Literal types
+
+A literal type represents exactly one specific value:
+
+```typescript twoslash
+type Direction = "north" | "south" | "east" | "west";
+type Bit = 0 | 1;
+type Answer = true;
+
+function move(direction: Direction, steps: number): void {
+  console.log(`Moving ${steps} steps ${direction}`);
+}
+
+move("north", 3); // OK
+// @errors: 2345
+move("up", 3);    // Error: Argument of type '"up"' is not assignable
+```
+
+Literal types are particularly powerful in discriminated unions, function overloads, and template literal types.
+
+### `const` assertions
+
+Use `as const` to infer the narrowest literal types from an object or array:
+
+```typescript twoslash
+const config = {
+  endpoint: "/api/v1",
+  method: "POST",
+} as const;
+// config.method is type "POST", not string
+
+const directions = ["north", "south", "east", "west"] as const;
+// directions is type readonly ["north", "south", "east", "west"]
+```
+
+## `unknown` vs. `any`
+
+Both `unknown` and `any` accept any value, but they differ in what you can do with them:
+
+<CodeGroup>
+
+```typescript any.ts
+declare const value: any;
+
+// any: you can do anything — no type safety
+value.foo();
+value[0];
+const n: number = value;
+```
+
+```typescript unknown.ts
+declare const value: unknown;
+
+// unknown: you must narrow first
+// @errors: 2571
+value.foo(); // Error: Object is of type 'unknown'
+
+if (typeof value === "string") {
+  console.log(value.toUpperCase()); // OK after narrowing
+}
+```
+
+</CodeGroup>
+
+<Warning>
+Avoid `any`. It silences the type checker entirely and defeats the purpose of TypeScript. Prefer `unknown` when the type is genuinely not known ahead of time, and narrow before use.
+</Warning>
+
+## The `never` type
+
+`never` represents values that never occur. The type checker assigns `never` to:
+
+- Functions that always throw or have infinite loops
+- Unreachable code branches after exhaustive checks
+- Empty union types
+
+```typescript twoslash
+function fail(message: string): never {
+  throw new Error(message);
+}
+
+function assertUnreachable(x: never): never {
+  throw new Error("Unreachable: " + x);
+}
+
+type Shape = { kind: "circle" } | { kind: "square" };
+
+function describe(shape: Shape): string {
+  switch (shape.kind) {
+    case "circle":
+      return "circle";
+    case "square":
+      return "square";
+    default:
+      // If you add a new Shape variant without updating this switch,
+      // TypeScript reports an error here.
+      return assertUnreachable(shape);
+  }
+}
+```
+
+The `assertUnreachable` pattern is a common technique for **exhaustiveness checking** — if you ever add a new union member without updating the switch, the compiler tells you immediately.

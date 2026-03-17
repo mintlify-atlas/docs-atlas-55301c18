@@ -1,0 +1,232 @@
+---
+title: Project References
+description: Use project references to structure large TypeScript codebases and monorepos
+---
+
+Project references, introduced in TypeScript 3.0, let you split a codebase into smaller, independently buildable pieces. Each piece is its own TypeScript project with its own `tsconfig.json`. TypeScript tracks the dependencies between them and only rebuilds what has changed.
+
+## When to use project references
+
+Project references are worth the setup cost when:
+
+- You work in a monorepo with multiple packages (e.g., `packages/core`, `packages/cli`, `packages/web`).
+- You have a large single-repo codebase with clearly independent subsystems (e.g., a shared `utils` layer consumed by several apps).
+- You want faster incremental builds — TypeScript skips unchanged projects entirely.
+- You want editor features (go to definition, rename) to cross project boundaries without loading the entire codebase.
+
+<Note>
+For smaller projects with a single output, `incremental: true` alone is usually enough. Project references pay off at scale.
+</Note>
+
+## Requirements
+
+Every project that is *referenced by* another must set `composite: true` in its `compilerOptions`. Setting `composite` automatically:
+
+- Sets `declaration: true` (so the referencing project consumes `.d.ts` files).
+- Requires `rootDir` to be set explicitly.
+- Forces all input files to be listed explicitly or matched by `include`/`files`.
+
+```json packages/utils/tsconfig.json
+{
+  "compilerOptions": {
+    "composite": true,
+    "declaration": true,
+    "outDir": "./dist",
+    "rootDir": "./src"
+  },
+  "include": ["src"]
+}
+```
+
+## The references field
+
+The `references` field in a `tsconfig.json` declares which other projects this project depends on. Each entry has a `path` pointing to the directory containing the referenced project's `tsconfig.json` (or to the file directly).
+
+```json packages/app/tsconfig.json
+{
+  "compilerOptions": {
+    "composite": true,
+    "outDir": "./dist",
+    "rootDir": "./src"
+  },
+  "references": [
+    { "path": "../utils" },
+    { "path": "../core" }
+  ]
+}
+```
+
+When TypeScript compiles `packages/app`, it reads the `.d.ts` files produced by `packages/utils` and `packages/core` instead of re-checking their source. This means:
+
+- Type information crosses the project boundary via `.d.ts` files.
+- The referenced projects must be built before the referencing project can compile.
+
+## Building with tsc --build
+
+The `tsc --build` command (short: `tsc -b`) is designed specifically for project references. It performs a topological build of all referenced projects in the correct order, and skips any project that is already up to date.
+
+```bash
+# Build all projects in dependency order
+tsc --build
+
+# Build a specific tsconfig (and its dependencies)
+tsc --build packages/app/tsconfig.json
+
+# Build multiple roots simultaneously
+tsc --build packages/app packages/cli
+```
+
+In `--build` mode TypeScript checks each project's `.tsbuildinfo` file to determine whether any inputs have changed since the last successful build.
+
+<Tip>
+Add `"build": "tsc -b"` to your root `package.json` scripts. You can also run `tsc -b --watch` for continuous incremental building.
+</Tip>
+
+## Incremental builds and .tsbuildinfo files
+
+Every composite project writes a `.tsbuildinfo` file to disk after a successful build (controlled by `tsBuildInfoFile`, defaulting to `.tsbuildinfo` next to the output). This file records:
+
+- The compiler version.
+- The compiler options used.
+- The set of input files and their content hashes.
+- The diagnostic results.
+
+On the next `tsc -b` run, TypeScript reads this file and only recompiles files whose content or dependencies changed.
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "composite": true,
+    "tsBuildInfoFile": ".cache/tsconfig.app.tsbuildinfo"
+  }
+}
+```
+
+<Note>
+Commit `.tsbuildinfo` files to version control if you want CI to benefit from incremental builds. Otherwise, CI always does a full build.
+</Note>
+
+## --clean and --force flags
+
+<AccordionGroup>
+  <Accordion title="--clean">
+    Deletes the output files and `.tsbuildinfo` files for the specified project and all its dependencies. Use this when you need a completely fresh build.
+
+    ```bash
+    tsc --build --clean
+    tsc --build packages/app --clean
+    ```
+  </Accordion>
+  <Accordion title="--force">
+    Rebuilds all projects unconditionally, ignoring `.tsbuildinfo` cache. Useful when you suspect the incremental state is stale.
+
+    ```bash
+    tsc --build --force
+    ```
+  </Accordion>
+  <Accordion title="--dry">
+    Shows what `tsc --build` would do without actually running any compilations. Useful for debugging build order and up-to-date checks.
+
+    ```bash
+    tsc --build --dry
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Monorepo example
+
+Here is a typical monorepo with three packages — `utils`, `core` (which depends on `utils`), and `app` (which depends on both) — plus a root solution `tsconfig.json`.
+
+<Steps>
+  <Step title="Set up the shared utils package">
+    ```json packages/utils/tsconfig.json
+    {
+      "compilerOptions": {
+        "composite": true,
+        "target": "ES2022",
+        "module": "NodeNext",
+        "moduleResolution": "NodeNext",
+        "declaration": true,
+        "outDir": "./dist",
+        "rootDir": "./src",
+        "strict": true
+      },
+      "include": ["src"]
+    }
+    ```
+  </Step>
+  <Step title="Set up the core package">
+    ```json packages/core/tsconfig.json
+    {
+      "compilerOptions": {
+        "composite": true,
+        "target": "ES2022",
+        "module": "NodeNext",
+        "moduleResolution": "NodeNext",
+        "declaration": true,
+        "outDir": "./dist",
+        "rootDir": "./src",
+        "strict": true
+      },
+      "include": ["src"],
+      "references": [
+        { "path": "../utils" }
+      ]
+    }
+    ```
+  </Step>
+  <Step title="Set up the app package">
+    ```json packages/app/tsconfig.json
+    {
+      "compilerOptions": {
+        "composite": true,
+        "target": "ES2022",
+        "module": "NodeNext",
+        "moduleResolution": "NodeNext",
+        "declaration": true,
+        "outDir": "./dist",
+        "rootDir": "./src",
+        "strict": true
+      },
+      "include": ["src"],
+      "references": [
+        { "path": "../utils" },
+        { "path": "../core" }
+      ]
+    }
+    ```
+  </Step>
+  <Step title="Create a root solution tsconfig">
+    The root `tsconfig.json` is a *solution file* — it has no `compilerOptions` of its own, just a list of all project roots. Running `tsc -b` from the repo root builds everything in the right order.
+
+    ```json tsconfig.json
+    {
+      "files": [],
+      "references": [
+        { "path": "./packages/utils" },
+        { "path": "./packages/core" },
+        { "path": "./packages/app" }
+      ]
+    }
+    ```
+
+    Build all packages from the repo root:
+
+    ```bash
+    tsc --build
+    ```
+  </Step>
+</Steps>
+
+## prepend (deprecated)
+
+The `prepend` option on a reference entry was an older mechanism that caused TypeScript to concatenate the output of the referenced project before the current project's output (useful with `outFile`). It is deprecated and should not be used in new projects.
+
+```json
+// Deprecated — do not use
+{
+  "references": [
+    { "path": "../utils", "prepend": true }
+  ]
+}
+```

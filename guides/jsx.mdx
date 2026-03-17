@@ -1,0 +1,274 @@
+---
+title: JSX
+description: Configure TypeScript to compile JSX, type React components, and work with intrinsic and custom elements in .tsx files.
+keywords: [JSX, TSX, React, jsx compiler option, FC, JSX.Element, IntrinsicElements]
+---
+
+TypeScript has built-in support for JSX. Files that contain JSX must use the `.tsx` extension, and the `jsx` compiler option controls how the compiler transforms JSX syntax.
+
+## Enabling JSX: the `jsx` compiler option
+
+Set the `jsx` option in `tsconfig.json` to tell the compiler how to handle JSX syntax.
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "jsx": "react-jsx"
+  }
+}
+```
+
+The available values map to different output strategies:
+
+<AccordionGroup>
+  <Accordion title="preserve">
+    Keeps JSX syntax in the output as-is. The `.jsx` file extension is used for emitted files. Use this when a downstream bundler (Babel, esbuild, Vite) handles the JSX transform itself.
+
+    ```tsx
+    // Input
+    const el = <Button onClick={handler}>Click me</Button>;
+
+    // Output (unchanged)
+    const el = <Button onClick={handler}>Click me</Button>;
+    ```
+  </Accordion>
+
+  <Accordion title="react">
+    Transforms JSX to `React.createElement` calls. This is the classic transform used with React before version 17. Requires `React` to be in scope in every `.tsx` file.
+
+    ```tsx
+    // Input
+    const el = <Button color="blue">Click me</Button>;
+
+    // Output
+    const el = React.createElement(Button, { color: "blue" }, "Click me");
+    ```
+  </Accordion>
+
+  <Accordion title="react-jsx">
+    Uses the automatic JSX runtime introduced in React 17. TypeScript imports `jsx` and `jsxs` from `react/jsx-runtime` automatically — you no longer need `import React from 'react'` at the top of every file.
+
+    ```tsx
+    // Input
+    const el = <Button color="blue">Click me</Button>;
+
+    // Output
+    import { jsx as _jsx } from 'react/jsx-runtime';
+    const el = _jsx(Button, { color: "blue", children: "Click me" });
+    ```
+  </Accordion>
+
+  <Accordion title="react-jsxdev">
+    Same as `react-jsx` but imports from `react/jsx-dev-runtime` and passes source file name and line information to `jsxDEV`. Use this in development builds for better error messages.
+  </Accordion>
+
+  <Accordion title="react-native">
+    Preserves JSX syntax (like `preserve`) but emits `.js` files instead of `.jsx`. Intended for the React Native bundler (Metro) which processes JSX separately.
+  </Accordion>
+</AccordionGroup>
+
+<Tip>
+  For new React projects targeting React 17+, use `react-jsx` in production and `react-jsxdev` in development. For non-React frameworks or when using a bundler like Vite, use `preserve`.
+</Tip>
+
+## The .tsx file extension
+
+Any file containing JSX **must** use the `.tsx` extension. This distinction matters because angle brackets (`<T>`) are ambiguous in `.ts` files — they could be a generic type parameter or a JSX element.
+
+```
+src/
+├── utils.ts        ← Pure TypeScript, no JSX
+├── Button.tsx      ← React component with JSX
+└── App.tsx         ← Root component
+```
+
+## Typing React components
+
+### Function components
+
+```tsx twoslash
+import type { FC, ReactNode } from 'react';
+
+interface ButtonProps {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  children?: ReactNode;
+}
+
+const Button: FC<ButtonProps> = ({ label, onClick, disabled, children }) => (
+  <button onClick={onClick} disabled={disabled} aria-label={label}>
+    {children ?? label}
+  </button>
+);
+```
+
+`FC<Props>` (short for `FunctionComponent<Props>`) automatically types the `children` prop as `ReactNode | undefined` and types the return value as `ReactElement | null`.
+
+An alternative — and often preferred — approach is to annotate the return type explicitly:
+
+```tsx twoslash
+import type { JSX, ReactNode } from 'react';
+
+interface CardProps {
+  title: string;
+  children: ReactNode;
+}
+
+function Card({ title, children }: CardProps): JSX.Element {
+  return (
+    <div className="card">
+      <h2>{title}</h2>
+      {children}
+    </div>
+  );
+}
+```
+
+### Generic components in TSX
+
+Generic function components require a trailing comma after the type parameter to disambiguate from a JSX opening tag:
+
+```tsx twoslash
+import type { ReactNode } from 'react';
+
+interface ListProps<T> {
+  items: T[];
+  renderItem: (item: T, index: number) => ReactNode;
+  keyExtractor: (item: T) => string;
+}
+
+function List<T,>({ items, renderItem, keyExtractor }: ListProps<T>) {
+  return (
+    <ul>
+      {items.map((item, i) => (
+        <li key={keyExtractor(item)}>{renderItem(item, i)}</li>
+      ))}
+    </ul>
+  );
+}
+
+// Usage — T is inferred as { id: string; name: string }
+const users = [{ id: '1', name: 'Alice' }, { id: '2', name: 'Bob' }];
+<List
+  items={users}
+  keyExtractor={(u) => u.id}
+  renderItem={(u) => <span>{u.name}</span>}
+/>;
+```
+
+<Note>
+  The trailing comma in `<T,>` is only required in `.tsx` files. In `.ts` files you write `<T>` as normal.
+</Note>
+
+## Intrinsic elements
+
+Intrinsic elements are lowercase JSX tags that map to HTML (or SVG) elements. TypeScript checks their props against `JSX.IntrinsicElements`, which is declared in the `@types/react` package.
+
+```tsx twoslash
+// TypeScript knows that <input> requires a 'type' attribute
+// and that 'onChnage' is not a valid prop (typo caught).
+const field = (
+  <input
+    type="email"
+    placeholder="you@example.com"
+    onChange={(e) => console.log(e.target.value)}
+  />
+);
+```
+
+For non-React environments you can declare your own intrinsic elements by augmenting the `JSX` namespace:
+
+```tsx
+declare namespace JSX {
+  interface IntrinsicElements {
+    'my-button': { label: string; disabled?: boolean };
+    'my-input': React.InputHTMLAttributes<HTMLInputElement>;
+  }
+}
+```
+
+## Custom elements (uppercase components)
+
+Uppercase JSX tags are treated as custom (user-defined) components. TypeScript checks that:
+
+1. The identifier resolves to a valid component type in scope.
+2. The props passed are compatible with the component's props type.
+3. The return type is a valid JSX element.
+
+```tsx twoslash
+import type { FC } from 'react';
+
+interface AvatarProps {
+  src: string;
+  alt: string;
+  size?: 'sm' | 'md' | 'lg';
+}
+
+const Avatar: FC<AvatarProps> = ({ src, alt, size = 'md' }) => (
+  <img src={src} alt={alt} className={`avatar avatar--${size}`} />
+);
+
+// Correct
+<Avatar src="/alice.jpg" alt="Alice" size="lg" />;
+
+// Error: 'size' must be 'sm' | 'md' | 'lg'
+// <Avatar src="/alice.jpg" alt="Alice" size="xl" />;
+```
+
+## Children types
+
+| Type | Accepts |
+| --- | --- |
+| `ReactNode` | Strings, numbers, elements, arrays, fragments, portals, booleans, null, undefined |
+| `ReactElement` | A single JSX element only |
+| `ReactChild` | String, number, or `ReactElement` (deprecated; use `ReactNode`) |
+| `string` | Plain text children only |
+| `never` | No children allowed |
+
+```tsx
+import type { FC, ReactNode, ReactElement } from 'react';
+
+// Accepts any renderable content
+interface SectionProps {
+  children: ReactNode;
+}
+
+// Accepts only a single React element
+interface SlotProps {
+  children: ReactElement;
+}
+
+// Accepts only a render function (render prop pattern)
+interface DataProviderProps<T> {
+  data: T;
+  children: (data: T) => ReactNode;
+}
+```
+
+## JSX factory configuration for non-React frameworks
+
+For frameworks like Preact or SolidJS, override the JSX factory with `jsxImportSource`:
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact"
+  }
+}
+```
+
+This makes TypeScript import `jsx` from `preact/jsx-runtime` instead of `react/jsx-runtime`, and uses Preact's `JSX.IntrinsicElements` for type checking HTML elements.
+
+You can also override the factory per-file using the `@jsxImportSource` pragma:
+
+```tsx
+/** @jsxImportSource solid-js */
+import { createSignal } from 'solid-js';
+
+function Counter() {
+  const [count, setCount] = createSignal(0);
+  return <button onClick={() => setCount(c => c + 1)}>{count()}</button>;
+}
+```

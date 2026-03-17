@@ -1,0 +1,408 @@
+---
+title: 'Scanner and parser'
+description: 'How the TypeScript scanner tokenizes source text and the parser builds the AST, with forEachChild for tree traversal.'
+keywords: ['typescript scanner', 'typescript parser', 'createSourceFile', 'AST', 'SyntaxKind', 'forEachChild']
+---
+
+The scanner and parser are the first two phases of compilation. The scanner converts raw source text into tokens; the parser assembles those tokens into a typed AST.
+
+## The Scanner
+
+The scanner tokenizes a string of source text, producing one `SyntaxKind` token at a time.
+
+### Creating a scanner
+
+```typescript
+function createScanner(
+  languageVersion: ScriptTarget,
+  skipTrivia: boolean,
+  languageVariant?: LanguageVariant,   // default: LanguageVariant.Standard
+  textInitial?: string,
+  onError?: ErrorCallback,
+  start?: number,
+  length?: number,
+): Scanner
+```
+
+Set `skipTrivia` to `true` to automatically skip whitespace and comment tokens when advancing with `scan()`.
+
+### The `Scanner` interface
+
+```typescript
+interface Scanner {
+  // Advance to the next token and return its SyntaxKind
+  scan(): SyntaxKind;
+
+  // Return the current token kind without advancing
+  getToken(): SyntaxKind;
+
+  // Source text of the current token (including any escape sequences)
+  getTokenText(): string;
+
+  // Interpreted value of the current token (e.g. unescaped string content)
+  getTokenValue(): string;
+
+  // Start position of the current token, not counting leading trivia
+  getTokenStart(): number;
+
+  // End position (exclusive) of the current token
+  getTokenEnd(): number;
+
+  // Start position including any leading trivia (whitespace, comments)
+  getTokenFullStart(): number;
+
+  // True if the scanner is positioned at a word that is a valid identifier
+  isIdentifier(): boolean;
+
+  // True if the scanner is positioned at a reserved keyword
+  isReservedWord(): boolean;
+
+  // True if the current string/template literal was not closed before EOF
+  isUnterminated(): boolean;
+
+  // Change the source text (and optionally scan a sub-range)
+  setText(text: string | undefined, start?: number, length?: number): void;
+
+  // Reset token position without changing the text
+  resetTokenState(pos: number): void;
+
+  // Full source text
+  getText(): string;
+
+  // Re-scan the current token as a '>' (to handle >> vs >=)
+  reScanGreaterToken(): SyntaxKind;
+
+  // Re-scan the current token as a regex literal
+  reScanSlashToken(): SyntaxKind;
+
+  // Re-scan a template token (for tagged template literals)
+  reScanTemplateToken(isTaggedTemplate: boolean): SyntaxKind;
+
+  // Speculative scanning: run callback, always restore scanner state
+  lookAhead<T>(callback: () => T): T;
+
+  // Scan only a specific range, restoring state afterwards
+  scanRange<T>(start: number, length: number, callback: () => T): T;
+
+  // Speculative scanning: commit only if callback returns truthy
+  tryScan<T>(callback: () => T): T;
+
+  setOnError(onError: ErrorCallback | undefined): void;
+  setScriptTarget(scriptTarget: ScriptTarget): void;
+  setLanguageVariant(variant: LanguageVariant): void;
+  setScriptKind(scriptKind: ScriptKind): void;
+}
+```
+
+### Example: scan tokens from a string
+
+```typescript
+import ts from 'typescript';
+
+const source = 'const x = 42;';
+const scanner = ts.createScanner(
+  ts.ScriptTarget.ES2022,
+  /*skipTrivia*/ true,
+  ts.LanguageVariant.Standard,
+  source,
+);
+
+let token = scanner.scan();
+while (token !== ts.SyntaxKind.EndOfFileToken) {
+  console.log(
+    ts.SyntaxKind[token].padEnd(24),
+    JSON.stringify(scanner.getTokenText()),
+  );
+  token = scanner.scan();
+}
+// ConstKeyword              "const"
+// Identifier                "x"
+// EqualsToken               "="
+// NumericLiteral            "42"
+// SemicolonToken            ";"
+```
+
+### `SyntaxKind` — key tokens
+
+The `SyntaxKind` enum has hundreds of members. The most commonly tested ones are:
+
+```typescript
+const enum SyntaxKind {
+  // Trivia
+  SingleLineCommentTrivia,
+  MultiLineCommentTrivia,
+  NewLineTrivia,
+  WhitespaceTrivia,
+
+  // Literals
+  NumericLiteral,
+  BigIntLiteral,
+  StringLiteral,
+  RegularExpressionLiteral,
+  NoSubstitutionTemplateLiteral,
+
+  // Punctuation (selection)
+  OpenBraceToken,    CloseBraceToken,
+  OpenParenToken,    CloseParenToken,
+  OpenBracketToken,  CloseBracketToken,
+  DotToken,          SemicolonToken,
+  CommaToken,        ColonToken,
+  EqualsToken,       EqualsGreaterThanToken,   // =>
+  LessThanToken,     GreaterThanToken,
+
+  // Keywords (selection)
+  BreakKeyword,  CaseKeyword,    ClassKeyword,
+  ConstKeyword,  ContinueKeyword,DefaultKeyword,
+  ElseKeyword,   EnumKeyword,    ExportKeyword,
+  FalseKeyword,  ForKeyword,     FunctionKeyword,
+  IfKeyword,     ImportKeyword,  LetKeyword,
+  NullKeyword,   ReturnKeyword,  StaticKeyword,
+  TrueKeyword,   TryKeyword,     TypeOfKeyword,
+  VarKeyword,    VoidKeyword,    WhileKeyword,
+
+  // TypeScript-specific keywords
+  AbstractKeyword, AsKeyword,      AsyncKeyword,
+  AwaitKeyword,    DeclareKeyword, FromKeyword,
+  InterfaceKeyword,NamespaceKeyword,TypeKeyword,
+
+  // Identifiers
+  Identifier,
+  PrivateIdentifier,
+
+  // Nodes
+  SourceFile,
+  FunctionDeclaration,
+  ClassDeclaration,
+  VariableDeclaration,
+  // ... (hundreds more)
+
+  EndOfFileToken,
+}
+```
+
+## The Parser
+
+The parser builds the full AST from source text. In most cases you will use `createSourceFile` directly rather than driving the scanner yourself.
+
+### `createSourceFile`
+
+The primary entry point for parsing:
+
+```typescript
+function createSourceFile(
+  fileName: string,
+  sourceText: string,
+  languageVersionOrOptions: ScriptTarget | CreateSourceFileOptions,
+  setParentNodes?: boolean,  // default: false
+  scriptKind?: ScriptKind,
+): SourceFile
+```
+
+Set `setParentNodes` to `true` if you need `node.parent` to be populated. This adds a small overhead but is required for many Compiler API utilities.
+
+### The `SourceFile` interface
+
+`SourceFile` is the AST root, extending `Declaration`:
+
+```typescript
+interface SourceFile extends Declaration, LocalsContainer {
+  readonly kind: SyntaxKind.SourceFile;
+  readonly statements: NodeArray<Statement>;  // Top-level statements
+  readonly endOfFileToken: Token<SyntaxKind.EndOfFileToken>;
+
+  fileName: string;          // Path as provided to createSourceFile
+  text: string;              // Full source text
+  languageVersion: ScriptTarget;
+  languageVariant: LanguageVariant;
+  isDeclarationFile: boolean;
+
+  amdDependencies: readonly AmdDependency[];
+  referencedFiles: readonly FileReference[];
+  typeReferenceDirectives: readonly FileReference[];
+  libReferenceDirectives: readonly FileReference[];
+
+  impliedNodeFormat?: ResolutionMode;
+}
+```
+
+### The `Node` interface
+
+Every AST node implements `Node`:
+
+```typescript
+interface Node extends ReadonlyTextRange {
+  readonly kind: SyntaxKind;  // What kind of node this is
+  readonly flags: NodeFlags;  // Parser/binder context flags
+  readonly parent: Node;      // Parent node (set if setParentNodes was true)
+  // pos and end come from ReadonlyTextRange:
+  // pos: number  — start offset in source text (inclusive)
+  // end: number  — end offset in source text (exclusive)
+}
+```
+
+### `NodeFlags`
+
+Common public `NodeFlags` values:
+
+```typescript
+const enum NodeFlags {
+  None               = 0,
+  Let                = 1 << 0,   // let declaration
+  Const              = 1 << 1,   // const declaration
+  Using              = 1 << 2,   // using declaration
+  NestedNamespace    = 1 << 3,
+  Synthesized        = 1 << 4,   // Node was created during a transform
+  Namespace          = 1 << 5,
+  OptionalChain      = 1 << 6,
+  GlobalAugmentation = 1 << 11,
+  HasAsyncFunctions  = 1 << 12,
+  JSDoc              = 1 << 24,
+  JsonFile           = 1 << 27,
+  // Composites
+  BlockScoped        = Let | Const | Using,
+  Constant           = Const | Using,
+}
+```
+
+### `ScriptKind`
+
+```typescript
+const enum ScriptKind {
+  Unknown  = 0,
+  JS       = 1,
+  JSX      = 2,
+  TS       = 3,
+  TSX      = 4,
+  External = 5,  // External tool; included in all project contexts
+  JSON     = 6,
+  Deferred = 7,  // Content-determined kind; included in all project contexts
+}
+```
+
+### `ScriptTarget`
+
+```typescript
+const enum ScriptTarget {
+  ES3    = 0,   // deprecated
+  ES5    = 1,   // deprecated
+  ES2015 = 2,
+  ES2016 = 3,
+  ES2017 = 4,
+  ES2018 = 5,
+  ES2019 = 6,
+  ES2020 = 7,
+  ES2021 = 8,
+  ES2022 = 9,
+  ES2023 = 10,
+  ES2024 = 11,
+  ES2025 = 12,
+  ESNext = 99,
+  JSON   = 100,
+  Latest = ESNext,
+}
+```
+
+## Walking the AST
+
+### `forEachChild`
+
+The core recursive-descent API. Calls `cbNode` for each direct child of `node`. Returns the first non-`undefined` value returned by a callback, or `undefined` if none is returned.
+
+```typescript
+function forEachChild<T>(
+  node: Node,
+  cbNode: (node: Node) => T | undefined,
+  cbNodes?: (nodes: NodeArray<Node>) => T | undefined,
+): T | undefined
+```
+
+### `visitEachChild`
+
+Used inside custom transformers. Visits every child of a node with a `Visitor` function and returns a (potentially modified) clone of the node.
+
+```typescript
+function visitEachChild<T extends Node>(
+  node: T,
+  visitor: Visitor,
+  context: TransformationContext | undefined,
+): T
+```
+
+### `visitNode`
+
+Visits a single node with a `Visitor` function, optionally validating the result with a type predicate.
+
+```typescript
+function visitNode<TIn extends Node | undefined, TVisited extends Node | undefined>(
+  node: TIn,
+  visitor: Visitor<NonNullable<TIn>, TVisited>,
+  test?: (node: Node) => boolean,
+  lift?: (node: readonly Node[]) => Node,
+): Node | (TIn & undefined) | (TVisited & undefined)
+```
+
+### Node type narrowing
+
+TypeScript ships predicate functions for every node kind:
+
+```typescript
+ts.isFunctionDeclaration(node)   // node is FunctionDeclaration
+ts.isVariableDeclaration(node)   // node is VariableDeclaration
+ts.isClassDeclaration(node)      // node is ClassDeclaration
+ts.isIdentifier(node)            // node is Identifier
+ts.isCallExpression(node)        // node is CallExpression
+ts.isImportDeclaration(node)     // node is ImportDeclaration
+// ... one for every SyntaxKind node
+```
+
+Alternatively, compare `node.kind` directly:
+
+```typescript
+if (node.kind === ts.SyntaxKind.FunctionDeclaration) {
+  const fn = node as ts.FunctionDeclaration;
+}
+```
+
+## Example: find all function declarations
+
+```typescript
+import ts from 'typescript';
+
+const source = `
+function add(a: number, b: number): number {
+  return a + b;
+}
+
+const multiply = (a: number, b: number) => a * b;
+
+class Calculator {
+  subtract(a: number, b: number): number {
+    return a - b;
+  }
+}
+`;
+
+const sourceFile = ts.createSourceFile(
+  'calc.ts',
+  source,
+  ts.ScriptTarget.ES2022,
+  /*setParentNodes*/ true,
+);
+
+function findFunctions(node: ts.Node): void {
+  if (ts.isFunctionDeclaration(node) && node.name) {
+    const name = node.name.text;
+    const params = node.parameters
+      .map((p) => {
+        const paramName = ts.isIdentifier(p.name) ? p.name.text : '?';
+        return paramName;
+      })
+      .join(', ');
+    console.log(`function ${name}(${params}) at pos ${node.pos}`);
+  }
+  ts.forEachChild(node, findFunctions);
+}
+
+findFunctions(sourceFile);
+// function add(a, b) at pos 1
+```

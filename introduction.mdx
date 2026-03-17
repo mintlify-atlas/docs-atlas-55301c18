@@ -1,0 +1,114 @@
+---
+title: Introduction
+description: TypeScript is a strongly typed programming language that builds on JavaScript, giving you better tooling at any scale.
+---
+
+TypeScript is a superset of JavaScript developed and maintained by Microsoft. It adds optional static typing and class-based object-oriented programming to the language. TypeScript code is transpiled to plain JavaScript, which can run in any JavaScript environment.
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install TypeScript via npm, yarn, or pnpm and set up your first project
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Build a working TypeScript project in under five minutes
+  </Card>
+  <Card title="Core Concepts" icon="book" href="/concepts/types-and-interfaces">
+    Learn about types, interfaces, generics, and the type system
+  </Card>
+  <Card title="Configuration" icon="gear" href="/configuration/tsconfig">
+    Configure `tsconfig.json` to tailor the compiler to your project
+  </Card>
+</CardGroup>
+
+## Why TypeScript?
+
+JavaScript is the world's most widely used programming language, but its dynamic nature makes it difficult to build and maintain large-scale applications. TypeScript addresses this by adding a type system on top of JavaScript that catches bugs at compile time rather than runtime.
+
+### Static type checking
+
+TypeScript catches type errors before your code runs. When you annotate your code with types, the compiler verifies that you're using values correctly across your entire codebase.
+
+```typescript twoslash
+// @errors: 2345
+function greet(name: string): string {
+  return "Hello, " + name;
+}
+
+greet(42); // Error: Argument of type 'number' is not assignable to parameter of type 'string'
+```
+
+### Excellent tooling
+
+TypeScript powers IDE features across VS Code, WebStorm, and other editors:
+- Autocompletion with accurate suggestions based on types
+- Go-to-definition across files
+- Inline error highlighting as you type
+- Refactoring tools (rename symbol, extract function)
+- Hover documentation from JSDoc comments
+
+### JavaScript compatibility
+
+TypeScript is a strict superset of JavaScript. Any valid JavaScript file is a valid TypeScript file. You can adopt TypeScript incrementally — start with `.ts` files alongside your existing `.js` files, and add types at your own pace.
+
+### Compiles to clean JavaScript
+
+TypeScript compiles down to standard JavaScript that runs in any browser, Node.js, or other JavaScript runtime. The compiled output is readable and closely mirrors the original TypeScript source.
+
+## How TypeScript works
+
+<Steps>
+  <Step title="Write TypeScript">
+    Author `.ts` or `.tsx` files using TypeScript's extended syntax — type annotations, interfaces, generics, and more.
+  </Step>
+  <Step title="Type checking">
+    The TypeScript compiler (`tsc`) analyzes your code, resolves types, and reports any type errors it finds.
+  </Step>
+  <Step title="Emit JavaScript">
+    After type checking, `tsc` strips all type annotations and emits clean `.js` files (and optionally `.d.ts` declaration files).
+  </Step>
+  <Step title="Run JavaScript">
+    The emitted JavaScript runs in any environment: browsers, Node.js, Deno, Bun, and more.
+  </Step>
+</Steps>
+
+## Key features
+
+<AccordionGroup>
+  <Accordion title="Type system">
+    TypeScript's type system includes primitives (`string`, `number`, `boolean`, `null`, `undefined`, `symbol`, `bigint`), object types, arrays, tuples, unions, intersections, literal types, template literal types, and conditional types. The type system is structural — two types are compatible if they share the same shape, regardless of their names.
+  </Accordion>
+  <Accordion title="Type inference">
+    TypeScript infers types automatically from how you use values, so you rarely need to annotate everything explicitly. Variables initialized with a value, function return types, and array element types are all inferred without annotations.
+  </Accordion>
+  <Accordion title="Generics">
+    Generics let you write functions, classes, and interfaces that work with multiple types while maintaining type safety. They eliminate the need for `any` when writing reusable code.
+  </Accordion>
+  <Accordion title="Decorators">
+    Decorators are a stage 3 JavaScript proposal that TypeScript supports. They allow you to annotate classes, methods, properties, and parameters with metadata and behavior.
+  </Accordion>
+  <Accordion title="Module system">
+    TypeScript supports ES modules (`import`/`export`), CommonJS (`require`/`module.exports`), and AMD. It handles `.ts`, `.tsx`, `.d.ts` files and can resolve modules from `node_modules`, path aliases, and more.
+  </Accordion>
+  <Accordion title="JSX support">
+    TypeScript compiles JSX (`.tsx` files) for React, Preact, SolidJS, and any other JSX-based framework. JSX elements are type-checked against component prop definitions.
+  </Accordion>
+</AccordionGroup>
+
+## TypeScript in the ecosystem
+
+TypeScript is used across the JavaScript ecosystem:
+
+- **Node.js** — Server-side applications with full type safety
+- **React / Next.js** — Frontend apps with typed components and hooks
+- **Angular** — Built with TypeScript from the ground up
+- **Vue 3** — First-class TypeScript support
+- **Deno** — Runs TypeScript natively without a build step
+- **Bun** — Transpiles TypeScript natively at runtime
+
+## Version
+
+The current release is TypeScript **6.0**. TypeScript follows semver and releases new minor versions every few months. Nightly builds are available via `typescript@next` on npm.
+
+<Note>
+TypeScript 6.0 requires Node.js 14.17 or higher. Use `npm install -D typescript` to get the latest stable version.
+</Note>

@@ -1,0 +1,350 @@
+---
+title: Generics
+description: Write reusable, type-safe code with generic functions, interfaces, and classes. Explore constraints, default type parameters, conditional types, and built-in utility types.
+keywords: ['typescript', 'generics', 'generic functions', 'generic constraints', 'conditional types', 'utility types', 'Partial', 'Record']
+---
+
+Generics let you write code that works with many different types while preserving type safety. Instead of duplicating logic for each type, you parameterize your functions, interfaces, and classes with a **type parameter** that is filled in at the call site.
+
+## Generic functions
+
+The simplest generic is a function with a type parameter `T`:
+
+```typescript twoslash
+function identity<T>(value: T): T {
+  return value;
+}
+
+const s = identity("hello"); // T = string, returns string
+const n = identity(42);      // T = number, returns number
+```
+
+Generics shine when you need to preserve the relationship between input and output types:
+
+```typescript twoslash
+function first<T>(arr: T[]): T | undefined {
+  return arr[0];
+}
+
+function last<T>(arr: T[]): T | undefined {
+  return arr[arr.length - 1];
+}
+
+function reverse<T>(arr: T[]): T[] {
+  return [...arr].reverse();
+}
+
+const items = [1, 2, 3];
+const head = first(items);    // number | undefined
+const tail = last(items);     // number | undefined
+const rev  = reverse(items);  // number[]
+```
+
+### Multiple type parameters
+
+```typescript twoslash
+function zip<A, B>(a: A[], b: B[]): [A, B][] {
+  return a.map((item, i) => [item, b[i]] as [A, B]);
+}
+
+const pairs = zip([1, 2, 3], ["a", "b", "c"]);
+// [number, string][]
+
+function mapValues<K extends string, V, W>(
+  obj: Record<K, V>,
+  fn: (v: V) => W
+): Record<K, W> {
+  const result = {} as Record<K, W>;
+  for (const key in obj) {
+    result[key] = fn(obj[key]);
+  }
+  return result;
+}
+```
+
+## Generic interfaces
+
+Interfaces can carry type parameters, making them reusable containers or contracts:
+
+```typescript twoslash
+interface Box<T> {
+  value: T;
+  map<U>(fn: (val: T) => U): Box<U>;
+}
+
+interface Repository<T, Id = number> {
+  findById(id: Id): Promise<T | null>;
+  findAll(): Promise<T[]>;
+  save(entity: T): Promise<T>;
+  delete(id: Id): Promise<void>;
+}
+
+interface User {
+  id: number;
+  name: string;
+}
+
+declare const userRepo: Repository<User>;
+```
+
+Generic interfaces are the backbone of many TypeScript patterns — `Promise<T>`, `Array<T>`, `Map<K, V>`, and `Set<T>` are all generic interfaces from the standard library.
+
+## Generic classes
+
+Classes can be parameterized just like functions and interfaces:
+
+```typescript twoslash
+class Stack<T> {
+  private items: T[] = [];
+
+  push(item: T): void {
+    this.items.push(item);
+  }
+
+  pop(): T | undefined {
+    return this.items.pop();
+  }
+
+  peek(): T | undefined {
+    return this.items[this.items.length - 1];
+  }
+
+  get size(): number {
+    return this.items.length;
+  }
+}
+
+const numberStack = new Stack<number>();
+numberStack.push(1);
+numberStack.push(2);
+const top = numberStack.pop(); // number | undefined
+
+const stringStack = new Stack<string>();
+stringStack.push("hello");
+```
+
+## Generic constraints
+
+Use `extends` to constrain a type parameter to types that have certain properties:
+
+```typescript twoslash
+function getLength<T extends { length: number }>(value: T): number {
+  return value.length;
+}
+
+getLength("hello");       // 5
+getLength([1, 2, 3]);    // 3
+getLength({ length: 7 }); // 7
+// @errors: 2345
+getLength(42);            // Error: number has no 'length'
+```
+
+### Constraining to object keys
+
+A common pattern is constraining a type parameter to the keys of another type with `extends keyof`:
+
+```typescript twoslash
+function getProperty<T, K extends keyof T>(obj: T, key: K): T[K] {
+  return obj[key];
+}
+
+const user = { id: 1, name: "Alice", active: true };
+
+const name = getProperty(user, "name");   // string
+const id   = getProperty(user, "id");     // number
+// @errors: 2345
+const bad  = getProperty(user, "email");  // Error: not a key of user
+```
+
+### Interface constraints
+
+```typescript twoslash
+interface Serializable {
+  serialize(): string;
+}
+
+function saveAll<T extends Serializable>(items: T[]): string[] {
+  return items.map((item) => item.serialize());
+}
+```
+
+## Default type parameters
+
+Type parameters can have defaults, making them optional at the call site:
+
+```typescript twoslash
+interface Response<T = unknown> {
+  data: T;
+  status: number;
+  message: string;
+}
+
+// Without explicit type arg — T defaults to unknown
+const raw: Response = { data: null, status: 200, message: "OK" };
+
+// With explicit type arg
+const typed: Response<{ id: number }> = {
+  data: { id: 1 },
+  status: 200,
+  message: "OK",
+};
+```
+
+```typescript twoslash
+function createArray<T, N extends number = 1>(
+  value: T,
+  count: N = 1 as N
+): T[] {
+  return Array.from({ length: count }, () => value);
+}
+
+const singles = createArray("x");     // default N = 1
+const triples = createArray("x", 3);  // N = 3
+```
+
+## Conditional types with generics
+
+Conditional types (`T extends U ? X : Y`) unlock advanced type-level programming:
+
+```typescript twoslash
+type IsString<T> = T extends string ? "yes" : "no";
+
+type A = IsString<string>;  // "yes"
+type B = IsString<number>;  // "no"
+type C = IsString<"hello">; // "yes" — literal extends string
+```
+
+### `infer` keyword
+
+`infer` lets you extract a type from within a conditional type:
+
+```typescript twoslash
+type ReturnType<T extends (...args: any[]) => any> =
+  T extends (...args: any[]) => infer R ? R : never;
+
+type Parameters<T extends (...args: any[]) => any> =
+  T extends (...args: infer P) => any ? P : never;
+
+function greet(name: string, age: number): string {
+  return `${name} is ${age}`;
+}
+
+type R = ReturnType<typeof greet>;   // string
+type P = Parameters<typeof greet>;   // [name: string, age: number]
+```
+
+### Distributive conditional types
+
+When the checked type is a naked type parameter, conditional types distribute over union members:
+
+```typescript twoslash
+type ToArray<T> = T extends any ? T[] : never;
+
+type StringOrNumberArray = ToArray<string | number>;
+// Distributed: ToArray<string> | ToArray<number>
+// Result: string[] | number[]
+```
+
+## Built-in utility types
+
+TypeScript ships with a library of generic utility types. The most commonly used ones:
+
+<AccordionGroup>
+  <Accordion title="Partial and Required">
+```typescript twoslash
+interface User {
+  id: number;
+  name: string;
+  email: string;
+}
+
+// All properties become optional
+type PartialUser = Partial<User>;
+// { id?: number; name?: string; email?: string }
+
+// All properties become required
+type RequiredUser = Required<PartialUser>;
+// { id: number; name: string; email: string }
+```
+  </Accordion>
+  <Accordion title="Pick and Omit">
+```typescript twoslash
+interface User {
+  id: number;
+  name: string;
+  email: string;
+  password: string;
+}
+
+// Keep only selected properties
+type PublicUser = Pick<User, "id" | "name" | "email">;
+
+// Remove selected properties
+type SafeUser = Omit<User, "password">;
+```
+  </Accordion>
+  <Accordion title="Record">
+```typescript twoslash
+type Role = "admin" | "editor" | "viewer";
+
+interface Permissions {
+  read: boolean;
+  write: boolean;
+  delete: boolean;
+}
+
+// Map each role to a permissions object
+const rolePermissions: Record<Role, Permissions> = {
+  admin:  { read: true,  write: true,  delete: true  },
+  editor: { read: true,  write: true,  delete: false },
+  viewer: { read: true,  write: false, delete: false },
+};
+```
+  </Accordion>
+  <Accordion title="Readonly and ReadonlyArray">
+```typescript twoslash
+interface Config {
+  host: string;
+  port: number;
+}
+
+// All properties are readonly
+const config: Readonly<Config> = { host: "localhost", port: 3000 };
+// @errors: 2540
+config.host = "example.com"; // Error
+
+// Immutable array
+const values: ReadonlyArray<number> = [1, 2, 3];
+// @errors: 2339
+values.push(4); // Error
+```
+  </Accordion>
+  <Accordion title="Exclude and Extract">
+```typescript twoslash
+type All = "a" | "b" | "c" | "d";
+
+// Remove types from a union
+type WithoutAB = Exclude<All, "a" | "b">; // "c" | "d"
+
+// Keep only matching types
+type OnlyAB = Extract<All, "a" | "b">; // "a" | "b"
+
+type Primitive = string | number | boolean | object;
+type NonObject = Exclude<Primitive, object>; // string | number | boolean
+```
+  </Accordion>
+  <Accordion title="NonNullable, ReturnType, Parameters">
+```typescript twoslash
+type MaybeString = string | null | undefined;
+type DefinitelyString = NonNullable<MaybeString>; // string
+
+function add(a: number, b: number): number {
+  return a + b;
+}
+
+type AddReturn = ReturnType<typeof add>;     // number
+type AddParams = Parameters<typeof add>;     // [a: number, b: number]
+type AddFirst  = Parameters<typeof add>[0];  // number
+```
+  </Accordion>
+</AccordionGroup>

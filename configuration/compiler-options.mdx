@@ -1,0 +1,539 @@
+---
+title: Compiler Options
+description: Complete reference for all TypeScript compiler options
+---
+
+Compiler options control how TypeScript parses, type-checks, and emits your code. You set them in the `compilerOptions` field of `tsconfig.json`, or pass them on the command line with the `tsc` CLI.
+
+## Language and environment
+
+These options control the JavaScript language version TypeScript targets and which built-in APIs are available.
+
+<ParamField path="compilerOptions.target" type="string" default="ES2022">
+  Sets the JavaScript language version for emitted JavaScript and selects compatible library declarations. Accepted values: `ES2015`, `ES2016`, `ES2017`, `ES2018`, `ES2019`, `ES2020`, `ES2021`, `ES2022`, `ES2023`, `ES2024`, `ES2025`, `ESNext`. The deprecated values `ES3` and `ES5` are still accepted.
+
+  ```json
+  { "compilerOptions": { "target": "ES2022" } }
+  ```
+</ParamField>
+
+<ParamField path="compilerOptions.lib" type="string[]">
+  Specifies a set of bundled library declaration files that describe the target runtime environment. When omitted, TypeScript infers a default set based on `target`.
+
+  Common values: `ES2015`–`ES2025`, `ESNext`, `DOM`, `DOM.Iterable`, `DOM.AsyncIterable`, `WebWorker`.
+
+  ```json
+  { "compilerOptions": { "lib": ["ES2022", "DOM", "DOM.Iterable"] } }
+  ```
+</ParamField>
+
+<ParamField path="compilerOptions.jsx" type="string">
+  Controls how JSX is transformed in `.tsx` files. Accepted values:
+
+  | Value | Behavior |
+  |---|---|
+  | `preserve` | Keep JSX as-is in output (`.jsx` extension) |
+  | `react` | Transform to `React.createElement` calls |
+  | `react-jsx` | Transform using the automatic JSX transform (`react/jsx-runtime`) |
+  | `react-jsxdev` | Like `react-jsx` but uses `react/jsx-dev-runtime` |
+  | `react-native` | Keep JSX as-is but emit with `.js` extension |
+
+  ```json
+  { "compilerOptions": { "jsx": "react-jsx" } }
+  ```
+</ParamField>
+
+<ParamField path="compilerOptions.jsxFactory" type="string" default="React.createElement">
+  Specifies the factory function called for JSX elements when `jsx` is set to `react`. Change this to `h` for Preact or another factory.
+
+  ```json
+  { "compilerOptions": { "jsx": "react", "jsxFactory": "h" } }
+  ```
+</ParamField>
+
+<ParamField path="compilerOptions.jsxFragmentFactory" type="string" default="React.Fragment">
+  Specifies the identifier to use for JSX fragments when `jsx` is `react`.
+
+  ```json
+  { "compilerOptions": { "jsxFragmentFactory": "Fragment" } }
+  ```
+</ParamField>
+
+<ParamField path="compilerOptions.jsxImportSource" type="string" default="react">
+  Specifies the module to import JSX factory functions from when `jsx` is `react-jsx` or `react-jsxdev`.
+
+  ```json
+  { "compilerOptions": { "jsx": "react-jsx", "jsxImportSource": "preact" } }
+  ```
+</ParamField>
+
+<ParamField path="compilerOptions.experimentalDecorators" type="boolean" default="false">
+  Enables support for legacy experimental decorators (the pre-TC39-standardized proposal). Required for frameworks like Angular and NestJS that use the older decorator syntax.
+
+  ```json
+  { "compilerOptions": { "experimentalDecorators": true } }
+  ```
+</ParamField>
+
+<ParamField path="compilerOptions.emitDecoratorMetadata" type="boolean" default="false">
+  Emits design-time type metadata for decorated declarations. Requires `experimentalDecorators: true`. Used by dependency injection frameworks.
+</ParamField>
+
+<ParamField path="compilerOptions.useDefineForClassFields" type="boolean" default="true for ES2022 and above, false otherwise">
+  Emits class fields using the ECMAScript-standard `Object.defineProperty` semantics instead of simple assignment. Matches the behavior of all modern JavaScript engines.
+</ParamField>
+
+<ParamField path="compilerOptions.moduleDetection" type="string" default="auto">
+  Controls how TypeScript determines whether a file is a module or a script. Values: `auto`, `legacy`, `force`.
+</ParamField>
+
+<ParamField path="compilerOptions.libReplacement" type="boolean" default="false">
+  Enables lib replacement, allowing you to substitute built-in lib files with custom versions.
+</ParamField>
+
+---
+
+## Modules
+
+These options control how TypeScript handles imports and exports.
+
+<ParamField path="compilerOptions.module" type="string">
+  Specifies the module system for emitted JavaScript. Accepted values: `CommonJS`, `ESNext`, `ES2015`–`ES2022`, `Node16`, `Node18`, `Node20`, `NodeNext`, `Preserve`. The values `None`, `AMD`, `System`, and `UMD` are deprecated.
+
+  | Value | Use case |
+  |---|---|
+  | `CommonJS` | Classic Node.js CJS projects |
+  | `NodeNext` | Modern Node.js supporting both ESM and CJS |
+  | `ESNext` | Bundler-based projects |
+  | `Preserve` | Let the bundler decide; TypeScript does not transform imports |
+
+  ```json
+  { "compilerOptions": { "module": "NodeNext" } }
+  ```
+</ParamField>
+
+<ParamField path="compilerOptions.moduleResolution" type="string">
+  Specifies how TypeScript resolves a file from a given module specifier. Accepted values: `node16`, `nodenext`, `bundler`, `node10` (legacy alias `node`), `classic` (deprecated).
+
+  ```json
+  { "compilerOptions": { "moduleResolution": "NodeNext" } }
+  ```
+
+  See [Module Resolution](/configuration/module-resolution) for detailed guidance on which value to choose.
+</ParamField>
+
+<ParamField path="compilerOptions.baseUrl" type="string">
+  Sets the base directory for resolving non-relative module names. With `baseUrl: "./src"`, you can write `import { foo } from "utils"` instead of a relative path.
+
+  ```json
+  { "compilerOptions": { "baseUrl": "./src" } }
+  ```
+</ParamField>
+
+<ParamField path="compilerOptions.paths" type="object">
+  Defines path mappings that re-map imports to additional lookup locations. Only valid in `tsconfig.json` (not on the command line).
+
+  ```json
+  {
+    "compilerOptions": {
+      "baseUrl": ".",
+      "paths": {
+        "@app/*": ["./src/*"],
+        "@utils": ["./src/utils/index.ts"]
+      }
+    }
+  }
+  ```
+
+  <Warning>
+  `paths` does not rewrite import paths in emitted JavaScript. If you use `paths`, your bundler or a tool like `tsc-alias` must also handle the rewriting at runtime.
+  </Warning>
+</ParamField>
+
+<ParamField path="compilerOptions.rootDirs" type="string[]">
+  Treats multiple directories as a single virtual root for the purpose of resolving module imports. Only valid in `tsconfig.json`.
+
+  ```json
+  { "compilerOptions": { "rootDirs": ["src", "generated"] } }
+  ```
+</ParamField>
+
+<ParamField path="compilerOptions.typeRoots" type="string[]">
+  Overrides the list of directories TypeScript searches for `@types` packages. By default TypeScript looks in every `node_modules/@types` folder up the directory tree.
+
+  ```json
+  { "compilerOptions": { "typeRoots": ["./typings", "./node_modules/@types"] } }
+  ```
+</ParamField>
+
+<ParamField path="compilerOptions.types" type="string[]">
+  When set, only the packages listed are automatically included from `@types`. Other `@types` packages can still be referenced explicitly via triple-slash directives.
+
+  ```json
+  { "compilerOptions": { "types": ["node", "jest"] } }
+  ```
+</ParamField>
+
+<ParamField path="compilerOptions.resolveJsonModule" type="boolean" default="false">
+  Allows importing `.json` files as modules. TypeScript will infer types from the JSON content.
+
+  ```json
+  { "compilerOptions": { "resolveJsonModule": true } }
+  ```
+</ParamField>
+
+<ParamField path="compilerOptions.resolvePackageJsonExports" type="boolean" default="true when moduleResolution is node16, nodenext, or bundler">
+  Consults the `exports` field in `package.json` when resolving package imports.
+</ParamField>
+
+<ParamField path="compilerOptions.resolvePackageJsonImports" type="boolean" default="true when moduleResolution is node16, nodenext, or bundler">
+  Consults the `imports` field in `package.json` when resolving imports that begin with `#`.
+</ParamField>
+
+<ParamField path="compilerOptions.allowImportingTsExtensions" type="boolean" default="false">
+  Allows imports to include TypeScript file extensions (`.ts`, `.tsx`, `.mts`). Requires `moduleResolution: bundler` and either `noEmit: true` or `emitDeclarationOnly: true`.
+
+  ```json
+  { "compilerOptions": { "allowImportingTsExtensions": true, "noEmit": true } }
+  ```
+</ParamField>
+
+<ParamField path="compilerOptions.allowArbitraryExtensions" type="boolean" default="false">
+  Enables importing files with any extension, provided a corresponding `.d.ts` declaration file is present.
+</ParamField>
+
+<ParamField path="compilerOptions.rewriteRelativeImportExtensions" type="boolean" default="false">
+  Rewrites `.ts`, `.tsx`, `.mts`, and `.cts` file extensions in relative import paths to their JavaScript equivalents in output files.
+</ParamField>
+
+<ParamField path="compilerOptions.moduleSuffixes" type="string[]">
+  Lists file name suffixes to try when resolving a module. Used by React Native projects to resolve platform-specific files.
+
+  ```json
+  { "compilerOptions": { "moduleSuffixes": [".native", ""] } }
+  ```
+</ParamField>
+
+<ParamField path="compilerOptions.customConditions" type="string[]">
+  Additional conditions to set when resolving imports via `package.json` `exports` or `imports` fields.
+</ParamField>
+
+<ParamField path="compilerOptions.noUncheckedSideEffectImports" type="boolean" default="true">
+  Reports errors when importing a module purely for side effects (e.g., `import "./setup"`) and TypeScript cannot find a corresponding file.
+</ParamField>
+
+---
+
+## Output
+
+These options control what TypeScript emits and where it writes output files.
+
+<ParamField path="compilerOptions.outDir" type="string">
+  Redirects output files to the specified directory, preserving the relative directory structure from `rootDir`.
+
+  ```json
+  { "compilerOptions": { "outDir": "./dist" } }
+  ```
+</ParamField>
+
+<ParamField path="compilerOptions.rootDir" type="string" default="Computed from input files">
+  Sets the root directory of source files. TypeScript uses this to compute the directory structure preserved inside `outDir`.
+
+  ```json
+  { "compilerOptions": { "rootDir": "./src", "outDir": "./dist" } }
+  ```
+</ParamField>
+
+<ParamField path="compilerOptions.outFile" type="string">
+  Concatenates all output into a single JavaScript file. Only works with `module: AMD` or `module: System`.
+</ParamField>
+
+<ParamField path="compilerOptions.declaration" type="boolean" default="false unless composite is set">
+  Generates `.d.ts` declaration files alongside emitted JavaScript. Required for libraries.
+
+  ```json
+  { "compilerOptions": { "declaration": true } }
+  ```
+</ParamField>
+
+<ParamField path="compilerOptions.declarationMap" type="boolean" default="false">
+  Creates source maps for `.d.ts` files, enabling "Go to definition" in editors to jump to the original source.
+
+  ```json
+  { "compilerOptions": { "declaration": true, "declarationMap": true } }
+  ```
+</ParamField>
+
+<ParamField path="compilerOptions.declarationDir" type="string">
+  Writes generated declaration files to this directory instead of alongside the emitted JavaScript.
+
+  ```json
+  { "compilerOptions": { "declaration": true, "declarationDir": "./types" } }
+  ```
+</ParamField>
+
+<ParamField path="compilerOptions.emitDeclarationOnly" type="boolean" default="false">
+  Only emits `.d.ts` files and skips JavaScript output. Useful when a bundler handles the JavaScript transformation.
+
+  ```json
+  { "compilerOptions": { "emitDeclarationOnly": true } }
+  ```
+</ParamField>
+
+<ParamField path="compilerOptions.noEmit" type="boolean" default="false">
+  Runs type checking without writing any output files. Useful in CI pipelines or when a separate tool handles emit.
+</ParamField>
+
+<ParamField path="compilerOptions.sourceMap" type="boolean" default="false">
+  Generates `.js.map` source map files alongside emitted JavaScript, allowing debuggers to step through TypeScript source.
+</ParamField>
+
+<ParamField path="compilerOptions.inlineSourceMap" type="boolean" default="false">
+  Embeds source map content directly inside emitted JavaScript files as a `//# sourceMappingURL` data URL, instead of writing a separate `.map` file.
+</ParamField>
+
+<ParamField path="compilerOptions.inlineSources" type="boolean" default="false">
+  Includes original TypeScript source code in source maps. Requires `sourceMap` or `inlineSourceMap`.
+</ParamField>
+
+<ParamField path="compilerOptions.sourceRoot" type="string">
+  Specifies the root path for debuggers to find source code. Overrides the path in the generated source map.
+</ParamField>
+
+<ParamField path="compilerOptions.mapRoot" type="string">
+  Specifies where debuggers should look for map files instead of the generated output location.
+</ParamField>
+
+<ParamField path="compilerOptions.removeComments" type="boolean" default="false">
+  Strips all comments from emitted JavaScript output.
+</ParamField>
+
+<ParamField path="compilerOptions.noEmitOnError" type="boolean" default="false">
+  Prevents emitting output files when any type errors are reported.
+</ParamField>
+
+<ParamField path="compilerOptions.noEmitHelpers" type="boolean" default="false">
+  Suppresses the generation of TypeScript helper functions (such as `__extends`) in output files. Use together with `importHelpers` and `tslib`.
+</ParamField>
+
+<ParamField path="compilerOptions.importHelpers" type="boolean" default="false">
+  Imports helper functions from `tslib` once per project instead of inlining them in every file. Reduces output size.
+</ParamField>
+
+<ParamField path="compilerOptions.newLine" type="string" default="lf">
+  Sets the newline character for emitted files. Accepted values: `lf`, `crlf`.
+</ParamField>
+
+<ParamField path="compilerOptions.emitBOM" type="boolean" default="false">
+  Emits a UTF-8 Byte Order Mark (BOM) at the beginning of output files.
+</ParamField>
+
+---
+
+## JavaScript support
+
+These options enable TypeScript to process JavaScript files.
+
+<ParamField path="compilerOptions.allowJs" type="boolean" default="false unless checkJs is set">
+  Allows JavaScript files (`.js`, `.jsx`, `.mjs`, `.cjs`) to be part of your TypeScript project.
+
+  ```json
+  { "compilerOptions": { "allowJs": true } }
+  ```
+</ParamField>
+
+<ParamField path="compilerOptions.checkJs" type="boolean" default="false">
+  Enables type checking and error reporting in JavaScript files. Implies `allowJs: true`.
+
+  ```json
+  { "compilerOptions": { "checkJs": true } }
+  ```
+</ParamField>
+
+<ParamField path="compilerOptions.maxNodeModuleJsDepth" type="number" default="0">
+  Sets the maximum folder depth for type-checking JavaScript files found in `node_modules`. Only applies when `allowJs` is set. The default of `0` means TypeScript does not check JavaScript in `node_modules`.
+</ParamField>
+
+---
+
+## Type checking — strict
+
+The `strict` flag is a shorthand that enables a group of individual strict checks. Enabling it is strongly recommended for new projects.
+
+<ParamField path="compilerOptions.strict" type="boolean" default="true">
+  Enables all strict type-checking options. Equivalent to enabling each of the flags below individually.
+
+  ```json
+  { "compilerOptions": { "strict": true } }
+  ```
+</ParamField>
+
+<Tip>
+Enable `strict: true` and then selectively set individual flags to `false` to opt out of specific checks rather than opting in one by one.
+</Tip>
+
+<ParamField path="compilerOptions.noImplicitAny" type="boolean" default="true unless strict is false">
+  Reports errors on expressions and declarations that have an implied `any` type. Forces you to annotate variables and parameters TypeScript cannot infer.
+</ParamField>
+
+<ParamField path="compilerOptions.strictNullChecks" type="boolean" default="true unless strict is false">
+  When enabled, `null` and `undefined` are only assignable to themselves and `unknown`. This catches a large class of null-reference bugs at compile time.
+</ParamField>
+
+<ParamField path="compilerOptions.strictFunctionTypes" type="boolean" default="true unless strict is false">
+  Enforces contravariant parameter checking for function types. Prevents unsafe function assignments.
+</ParamField>
+
+<ParamField path="compilerOptions.strictBindCallApply" type="boolean" default="true unless strict is false">
+  Checks that arguments passed to `bind`, `call`, and `apply` match the original function's signature.
+</ParamField>
+
+<ParamField path="compilerOptions.strictPropertyInitialization" type="boolean" default="true unless strict is false">
+  Reports errors on class properties that are declared but not set in the constructor. Requires `strictNullChecks`.
+</ParamField>
+
+<ParamField path="compilerOptions.strictBuiltinIteratorReturn" type="boolean" default="true unless strict is false">
+  Causes built-in iterators to be typed with `TReturn = undefined` instead of `any`, matching actual iterator behavior.
+</ParamField>
+
+<ParamField path="compilerOptions.noImplicitThis" type="boolean" default="true unless strict is false">
+  Reports errors when `this` is used in a context where its type is `any`.
+</ParamField>
+
+<ParamField path="compilerOptions.useUnknownInCatchVariables" type="boolean" default="true unless strict is false">
+  Types `catch` clause variables as `unknown` instead of `any`, requiring explicit type narrowing before use.
+</ParamField>
+
+<ParamField path="compilerOptions.alwaysStrict" type="boolean" default="true">
+  Emits `"use strict"` at the top of every output file and parses each source file in strict mode.
+</ParamField>
+
+---
+
+## Type checking — additional checks
+
+These checks are not part of `strict` but are useful for catching common mistakes.
+
+<ParamField path="compilerOptions.noUnusedLocals" type="boolean" default="false">
+  Reports errors when local variables are declared but never read.
+</ParamField>
+
+<ParamField path="compilerOptions.noUnusedParameters" type="boolean" default="false">
+  Reports errors when function parameters are declared but never read.
+</ParamField>
+
+<ParamField path="compilerOptions.exactOptionalPropertyTypes" type="boolean" default="false">
+  Interprets optional property types exactly as written, without silently adding `undefined`. With this enabled, `{ x?: string }` means the `x` property can be absent but cannot be explicitly assigned `undefined`.
+</ParamField>
+
+<ParamField path="compilerOptions.noImplicitReturns" type="boolean" default="false">
+  Reports errors when a function has code paths that do not explicitly return a value.
+</ParamField>
+
+<ParamField path="compilerOptions.noFallthroughCasesInSwitch" type="boolean" default="false">
+  Reports errors for `switch` statement cases that fall through without a `break`, `return`, or `throw`.
+</ParamField>
+
+<ParamField path="compilerOptions.noUncheckedIndexedAccess" type="boolean" default="false">
+  Adds `undefined` to the type of any value obtained by indexing into an array or object with an index signature. Catches out-of-bounds access at the type level.
+</ParamField>
+
+<ParamField path="compilerOptions.noImplicitOverride" type="boolean" default="false">
+  Requires that class members which override a base class member be explicitly marked with the `override` keyword.
+</ParamField>
+
+<ParamField path="compilerOptions.noPropertyAccessFromIndexSignature" type="boolean" default="false">
+  Enforces the use of indexed access notation (`obj["key"]`) instead of dot notation (`obj.key`) for properties declared via an index signature.
+</ParamField>
+
+---
+
+## Interop constraints
+
+<ParamField path="compilerOptions.esModuleInterop" type="boolean" default="true">
+  Emits additional JavaScript helpers to support importing CommonJS modules using ES module default import syntax. Also enables `allowSyntheticDefaultImports`.
+
+  ```json
+  { "compilerOptions": { "esModuleInterop": true } }
+  ```
+</ParamField>
+
+<ParamField path="compilerOptions.allowSyntheticDefaultImports" type="boolean" default="true">
+  Allows `import x from 'y'` when the module does not have a default export, without emitting interop helpers. Enabled automatically by `esModuleInterop`.
+</ParamField>
+
+<ParamField path="compilerOptions.forceConsistentCasingInFileNames" type="boolean" default="true">
+  Ensures that imports refer to files using the correct casing. Prevents bugs on case-sensitive file systems (Linux) from being masked on case-insensitive ones (macOS, Windows).
+</ParamField>
+
+<ParamField path="compilerOptions.isolatedModules" type="boolean" default="false">
+  Ensures every file can be independently transpiled without requiring information from other files. Required when using Babel, esbuild, or other single-file transpilers.
+</ParamField>
+
+<ParamField path="compilerOptions.verbatimModuleSyntax" type="boolean" default="false">
+  Prevents TypeScript from transforming or eliding imports and exports that are not marked as `type`-only. The output format follows the `module` setting directly.
+</ParamField>
+
+<ParamField path="compilerOptions.isolatedDeclarations" type="boolean" default="false">
+  Requires sufficient type annotations on exported declarations so that other tools (such as `isolatedDeclarations`-aware bundlers) can generate `.d.ts` files without performing full type inference.
+</ParamField>
+
+<ParamField path="compilerOptions.erasableSyntaxOnly" type="boolean" default="false">
+  Disallows TypeScript-specific runtime constructs that are not part of ECMAScript (e.g., namespaces, `enum`, parameter properties with `experimentalDecorators`). Designed for environments that strip types without transformation.
+</ParamField>
+
+<ParamField path="compilerOptions.preserveSymlinks" type="boolean" default="false">
+  Disables resolving symlinks to their real paths. Mirrors the `--preserve-symlinks` flag in Node.js.
+</ParamField>
+
+---
+
+## Projects
+
+<ParamField path="compilerOptions.composite" type="boolean" default="false">
+  Enables constraints that allow the project to be used with project references. Automatically sets `declaration: true` and requires an explicit `rootDir`.
+
+  ```json
+  { "compilerOptions": { "composite": true } }
+  ```
+</ParamField>
+
+<ParamField path="compilerOptions.incremental" type="boolean" default="false unless composite is set">
+  Saves a `.tsbuildinfo` file to disk after each compilation. On subsequent runs TypeScript reads this file to determine what changed and skip re-checking unchanged code.
+</ParamField>
+
+<ParamField path="compilerOptions.tsBuildInfoFile" type="string" default=".tsbuildinfo">
+  Specifies the path where TypeScript writes the incremental compilation cache file.
+
+  ```json
+  { "compilerOptions": { "incremental": true, "tsBuildInfoFile": ".cache/.tsbuildinfo" } }
+  ```
+</ParamField>
+
+<ParamField path="compilerOptions.disableSourceOfProjectReferenceRedirect" type="boolean" default="false">
+  Stops TypeScript from preferring source `.ts` files over `.d.ts` declaration files when navigating to a symbol from a referenced composite project.
+</ParamField>
+
+<ParamField path="compilerOptions.disableSolutionSearching" type="boolean" default="false">
+  Opts this project out of multi-project reference checking during editor operations.
+</ParamField>
+
+<ParamField path="compilerOptions.disableReferencedProjectLoad" type="boolean" default="false">
+  Reduces the number of projects loaded automatically by TypeScript in large solution-style workspaces.
+</ParamField>
+
+---
+
+## Completeness
+
+<ParamField path="compilerOptions.skipLibCheck" type="boolean" default="false">
+  Skips type checking of all `.d.ts` declaration files, including those in `node_modules`. Speeds up compilation and avoids errors from poorly typed third-party packages.
+
+  ```json
+  { "compilerOptions": { "skipLibCheck": true } }
+  ```
+</ParamField>
+
+<ParamField path="compilerOptions.skipDefaultLibCheck" type="boolean" default="false">
+  Skips type checking of the built-in TypeScript library files (e.g., `lib.dom.d.ts`). For most use cases, `skipLibCheck` is the better choice.
+</ParamField>

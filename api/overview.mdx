@@ -1,0 +1,130 @@
+---
+title: 'Compiler API overview'
+description: 'An introduction to the TypeScript Compiler API: architecture, use cases, installation, and a minimal example to get started.'
+keywords: ['typescript compiler api', 'compiler internals', 'AST', 'program', 'typescript npm']
+---
+
+The TypeScript Compiler API gives you programmatic access to the same machinery that `tsc` uses. You can parse source files, inspect and traverse the AST, resolve types, and emit JavaScript — all from your own Node.js code.
+
+## Use cases
+
+<CardGroup cols={2}>
+  <Card title="Linters and code analysis" icon="magnifying-glass">
+    Walk the AST to enforce project-specific rules, detect anti-patterns, or extract metrics.
+  </Card>
+  <Card title="Code generators" icon="code">
+    Read declarations or schemas and emit TypeScript source files programmatically.
+  </Card>
+  <Card title="Refactoring tools" icon="wrench">
+    Locate identifiers, understand their types and references, and rewrite source text.
+  </Card>
+  <Card title="Build tools and bundlers" icon="cube">
+    Integrate TypeScript type-checking and emit into custom build pipelines.
+  </Card>
+</CardGroup>
+
+## Installation
+
+The Compiler API is part of the `typescript` package. No separate package is needed.
+
+<Tabs>
+  <Tab title="npm">
+    ```bash
+    npm install typescript
+    ```
+  </Tab>
+  <Tab title="pnpm">
+    ```bash
+    pnpm add typescript
+    ```
+  </Tab>
+  <Tab title="yarn">
+    ```bash
+    yarn add typescript
+    ```
+  </Tab>
+</Tabs>
+
+Import the entire API as the `ts` namespace:
+
+```typescript
+import ts from 'typescript';
+// or
+import * as ts from 'typescript';
+```
+
+## Architecture
+
+The TypeScript compiler is a pipeline of distinct phases. Each phase consumes the output of the previous one.
+
+<Steps>
+  <Step title="Scanner">
+    Tokenizes raw source text into a stream of `SyntaxKind` tokens. Handles whitespace, comments, string literals, template expressions, and JSX.
+  </Step>
+  <Step title="Parser">
+    Consumes the token stream and builds a **SourceFile** — the root of an immutable AST (Abstract Syntax Tree) made up of `Node` objects.
+  </Step>
+  <Step title="Binder">
+    Traverses the AST and constructs the **symbol table**, linking every identifier to a `Symbol` and recording the scope hierarchy. The binder runs automatically when you access a `TypeChecker`.
+  </Step>
+  <Step title="Checker">
+    Performs full **type checking** against the symbol table and type graph. Answers questions like "what is the type of this expression?" and "is this assignment valid?"
+  </Step>
+  <Step title="Emitter">
+    Transforms the type-checked AST into **JavaScript output** (and optional `.d.ts` declaration files and source maps).
+  </Step>
+</Steps>
+
+## The Program object
+
+`Program` is the central entry point for the Compiler API. It represents an immutable compilation unit: a set of root source files, compiler options, and a module resolution host. You create a `Program` with `ts.createProgram()` and use it to:
+
+- Access all `SourceFile` objects in the compilation
+- Obtain a `TypeChecker` for semantic analysis
+- Emit JavaScript output
+- Collect syntactic and semantic diagnostics
+
+See the [Program](/api/program) page for the full API.
+
+## API stability
+
+<Warning>
+The TypeScript compiler's **internal** implementation (anything marked `@internal` in the source, or not present in the public `typescript.d.ts`) can change between any release, including patch releases. Only use the surface area exported from the public declaration file.
+</Warning>
+
+The safe public API is what appears in `node_modules/typescript/lib/typescript.d.ts`. Methods annotated `@internal` in the source are not included in that file and must not be relied upon.
+
+## Minimal example
+
+Parse a TypeScript source file and print the `kind` of every top-level statement:
+
+```typescript
+import ts from 'typescript';
+
+const fileName = 'example.ts';
+const sourceText = `
+const x: number = 42;
+function greet(name: string): string {
+  return 'Hello, ' + name;
+}
+`;
+
+// Parse the source text into a SourceFile (AST root)
+const sourceFile = ts.createSourceFile(
+  fileName,
+  sourceText,
+  ts.ScriptTarget.ES2022,
+  /*setParentNodes*/ true,
+);
+
+// Iterate over top-level statements
+for (const statement of sourceFile.statements) {
+  console.log(
+    ts.SyntaxKind[statement.kind],   // e.g. "VariableStatement", "FunctionDeclaration"
+    statement.pos,
+    statement.end,
+  );
+}
+```
+
+For type-checking, you need a full `Program`. See the [Program](/api/program) page for a complete working example.

@@ -1,0 +1,295 @@
+---
+title: Migrating from JavaScript
+description: A step-by-step guide for incrementally adopting TypeScript in an existing JavaScript project — from zero types to full strict mode.
+---
+
+Migrating a JavaScript project to TypeScript does not have to happen all at once. TypeScript is designed to be adopted incrementally: you can start by adding the compiler alongside your existing `.js` files, introduce types one file at a time, and enable stricter checks as your confidence grows.
+
+## Prerequisites
+
+Install TypeScript as a dev dependency:
+
+```bash
+npm install --save-dev typescript
+```
+
+Then generate an initial `tsconfig.json`:
+
+```bash
+npx tsc --init
+```
+
+## Phase 1: Add TypeScript without changing any files
+
+The first step is to get the TypeScript compiler running on your project without requiring you to rename or modify a single `.js` file.
+
+<Steps>
+  <Step title="Enable allowJs">
+    Open `tsconfig.json` and set `allowJs` to `true`. This tells the compiler to include `.js` files in the compilation.
+
+    ```json tsconfig.json
+    {
+      "compilerOptions": {
+        "allowJs": true,
+        "outDir": "./dist"
+      },
+      "include": ["src"]
+    }
+    ```
+
+    Run `npx tsc` — it should compile your project without errors even though nothing has TypeScript annotations yet.
+  </Step>
+
+  <Step title="Enable checkJs for JS type errors">
+    Set `checkJs` to `true` to get type errors inside your `.js` files. TypeScript will infer types from usage and flag obvious mistakes.
+
+    ```json tsconfig.json
+    {
+      "compilerOptions": {
+        "allowJs": true,
+        "checkJs": true,
+        "outDir": "./dist"
+      }
+    }
+    ```
+
+    <Warning>
+      `checkJs` can surface a large number of errors in a legacy codebase on first run. Use `// @ts-nocheck` at the top of files you want to defer, and work through them incrementally.
+    </Warning>
+  </Step>
+
+  <Step title="Verify the build still works">
+    Run your existing test suite and build pipeline to confirm the TypeScript compiler does not break anything at this stage.
+  </Step>
+</Steps>
+
+## Phase 2: Install type definitions for third-party packages
+
+Most popular npm packages either bundle their own types or have a corresponding `@types/*` package on npm.
+
+```bash
+# Check if a package includes built-in types
+cat node_modules/lodash/package.json | grep '"types"'
+
+# Install DefinitelyTyped definitions
+npm install --save-dev @types/lodash @types/node @types/express
+```
+
+After installing `@types/*` packages TypeScript automatically discovers them — no import or configuration required.
+
+<Tip>
+  Use `npx typesync` to automatically find and add missing `@types/*` entries for all your dependencies at once.
+</Tip>
+
+For packages that have no types at all, declare a quick ambient module so TypeScript stops complaining:
+
+```typescript types/untyped-pkg.d.ts
+declare module 'some-untyped-package' {
+  const value: any;
+  export default value;
+}
+```
+
+## Phase 3: Rename files from .js to .ts incrementally
+
+Once the project compiles cleanly under `allowJs`, start renaming files one at a time. Prioritise the files that are imported most widely — fixing their types propagates benefits across the rest of the codebase.
+
+<Steps>
+  <Step title="Rename a leaf module first">
+    Start with a utility file that has no imports from your own code — for example, a string helper. Rename it from `.js` to `.ts`.
+  </Step>
+
+  <Step title="Add type annotations">
+    Add explicit types to function parameters and return values. The compiler will guide you to every place it cannot infer a type.
+
+    <CodeGroup>
+    ```javascript Before (utils.js)
+    function formatCurrency(amount, currency) {
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency,
+      }).format(amount);
+    }
+    ```
+
+    ```typescript After (utils.ts)
+    function formatCurrency(amount: number, currency: string): string {
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency,
+      }).format(amount);
+    }
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Work inward toward entry points">
+    After leaf modules are converted, move to the modules that import them, and so on until you reach your entry point files.
+  </Step>
+</Steps>
+
+## Phase 4: Enable strict mode gradually
+
+`strict` is a shorthand for a group of compiler flags that catch more bugs. Rather than enabling them all at once, turn them on one by one:
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "strictNullChecks": true,
+    "noImplicitAny": true,
+    "strictFunctionTypes": true,
+    "strictBindCallApply": true,
+    "strictPropertyInitialization": true,
+    "noImplicitThis": true,
+    "alwaysStrict": true
+  }
+}
+```
+
+Once all individual flags are enabled, replace them with the single `"strict": true` shorthand.
+
+### Handling strictNullChecks
+
+Enabling `strictNullChecks` is often the biggest hurdle. It forces you to handle `null` and `undefined` explicitly instead of assuming values are always present.
+
+```typescript twoslash
+// @strict: true
+function getUser(id: number): { name: string } | undefined {
+  if (id === 1) return { name: 'Alice' };
+  return undefined;
+}
+
+const user = getUser(2);
+// Without strictNullChecks you could access user.name freely.
+// With it, you must guard first:
+if (user) {
+  console.log(user.name); // safe
+}
+```
+
+## Escape hatches
+
+When you need to silence errors during migration, TypeScript provides two comment directives.
+
+<AccordionGroup>
+  <Accordion title="// @ts-ignore">
+    Suppresses the error on the next line without verifying that an error actually exists.
+
+    ```typescript
+    // @ts-ignore
+    const result = legacyFunction(arg1, arg2);
+    ```
+
+    Use this sparingly — it silently hides errors that may be legitimate.
+  </Accordion>
+
+  <Accordion title="// @ts-expect-error">
+    Suppresses the error on the next line but **reports a new error** if the next line has no error. This is safer because it forces you to remove the comment once the underlying issue is fixed.
+
+    ```typescript
+    // @ts-expect-error — remove after migrating legacyFunction
+    const result = legacyFunction(arg1, arg2);
+    ```
+  </Accordion>
+
+  <Accordion title="// @ts-nocheck">
+    Disables type checking for an entire file. Useful for large legacy files you are not ready to migrate yet.
+
+    ```typescript
+    // @ts-nocheck
+    // This entire file is excluded from type checking
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Using JSDoc as an alternative to .ts files
+
+If you cannot rename files to `.ts` (for example, in a monorepo with mixed consumers), you can annotate JavaScript with JSDoc comments. TypeScript understands JSDoc when `checkJs` is enabled.
+
+```javascript utils.js
+/**
+ * @param {number} amount
+ * @param {string} currency
+ * @returns {string}
+ */
+function formatCurrency(amount, currency) {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount);
+}
+
+/**
+ * @typedef {{ id: number; name: string; email: string }} User
+ */
+
+/**
+ * @param {User} user
+ * @returns {Promise<void>}
+ */
+async function saveUser(user) {
+  await db.users.insert(user);
+}
+```
+
+You can import types from `.ts` or `.d.ts` files into JSDoc using `@import`:
+
+```javascript
+/** @import { User } from './types.ts' */
+```
+
+## Common migration issues
+
+<AccordionGroup>
+  <Accordion title="Object is possibly undefined">
+    Enable optional chaining (`?.`) and nullish coalescing (`??`) to handle optional values safely:
+
+    ```typescript twoslash
+    const config = { timeout: undefined };
+    const timeout = config?.timeout ?? 5000;
+    ```
+  </Accordion>
+
+  <Accordion title="Argument of type 'any' is not assignable">
+    Replace `any` with the actual type, or use `unknown` when you genuinely do not know the type at call time and want to force callers to narrow before use.
+  </Accordion>
+
+  <Accordion title="Property does not exist on type">
+    This usually means you're accessing a property that TypeScript cannot see on the declared type. Either add the property to the interface, use a type assertion (`as MyType`), or use an index signature if the object has dynamic keys.
+  </Accordion>
+
+  <Accordion title="Module not found or no declaration file">
+    Install the `@types/*` package, write an ambient module declaration, or set `noImplicitAny: false` temporarily for that file.
+  </Accordion>
+
+  <Accordion title="Class property has no initializer and is not definitely assigned">
+    Either initialise the property inline, assign it in the constructor, or use the definite assignment assertion operator (`!`) when you know an external mechanism (like a DI framework) will assign it:
+
+    ```typescript
+    class UserService {
+      db!: Database; // assigned by the DI container
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Recommended tsconfig for migration
+
+A safe starting config that gradually increases strictness:
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "allowJs": true,
+    "checkJs": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "outDir": "./dist",
+    "declaration": true
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "dist"]
+}
+```

@@ -1,0 +1,284 @@
+---
+title: 'Program'
+description: 'How to create and use a TypeScript Program: the entry point for compilation, type checking, and emit.'
+keywords: ['typescript program', 'createProgram', 'CompilerHost', 'type checking', 'emit']
+---
+
+A `Program` is an immutable compilation unit that holds a set of `SourceFile` objects and `CompilerOptions`. It is the entry point for every Compiler API operation: parsing, type checking, and emitting JavaScript.
+
+## Creating a Program
+
+`createProgram` has two call signatures:
+
+```typescript
+// Overload 1: explicit root file names and options
+function createProgram(
+  rootNames: readonly string[],
+  options: CompilerOptions,
+  host?: CompilerHost,
+  oldProgram?: Program,
+  configFileParsingDiagnostics?: readonly Diagnostic[],
+): Program;
+
+// Overload 2: options object
+function createProgram(createProgramOptions: CreateProgramOptions): Program;
+```
+
+### `CreateProgramOptions`
+
+```typescript
+interface CreateProgramOptions {
+  rootNames: readonly string[];          // Root files to include
+  options: CompilerOptions;              // Compiler options (equivalent to tsconfig.json)
+  projectReferences?: readonly ProjectReference[];
+  host?: CompilerHost;                   // Custom file-system host (optional)
+  oldProgram?: Program;                  // Previous program for incremental reuse
+  configFileParsingDiagnostics?: readonly Diagnostic[];
+}
+```
+
+### `CompilerOptions`
+
+`CompilerOptions` maps directly to the options in `tsconfig.json`. Common fields:
+
+```typescript
+const options: ts.CompilerOptions = {
+  target: ts.ScriptTarget.ES2022,
+  module: ts.ModuleKind.CommonJS,
+  strict: true,
+  noEmit: true,
+  outDir: './dist',
+};
+```
+
+## The `CompilerHost` interface
+
+A `CompilerHost` abstracts all file-system interactions. TypeScript asks the host to read files, write output, and resolve module names. The required methods are:
+
+```typescript
+interface CompilerHost extends ModuleResolutionHost {
+  getSourceFile(
+    fileName: string,
+    languageVersionOrOptions: ScriptTarget | CreateSourceFileOptions,
+    onError?: (message: string) => void,
+    shouldCreateNewSourceFile?: boolean,
+  ): SourceFile | undefined;
+  getDefaultLibFileName(options: CompilerOptions): string;
+  writeFile: WriteFileCallback;
+  getCurrentDirectory(): string;
+  getCanonicalFileName(fileName: string): string;
+  useCaseSensitiveFileNames(): boolean;
+  getNewLine(): string;
+  // Optional:
+  getCancellationToken?(): CancellationToken;
+  getDefaultLibLocation?(): string;
+  readDirectory?(
+    rootDir: string,
+    extensions: readonly string[],
+    excludes: readonly string[] | undefined,
+    includes: readonly string[],
+    depth?: number,
+  ): string[];
+  jsDocParsingMode?: JSDocParsingMode;
+}
+```
+
+For the common case of reading from the real file system, use the built-in default host:
+
+```typescript
+function createCompilerHost(
+  options: CompilerOptions,
+  setParentNodes?: boolean,
+): CompilerHost;
+```
+
+### `WriteFileCallback`
+
+The callback invoked by the emitter when it writes an output file:
+
+```typescript
+type WriteFileCallback = (
+  fileName: string,
+  text: string,
+  writeByteOrderMark: boolean,
+  onError?: (message: string) => void,
+  sourceFiles?: readonly SourceFile[],
+  data?: WriteFileCallbackData,
+) => void;
+```
+
+## The `Program` interface
+
+Key public methods on `Program`:
+
+### Source file access
+
+```typescript
+interface Program {
+  // All source files in the compilation
+  getSourceFiles(): readonly SourceFile[];
+
+  // The root file names passed to createProgram
+  getRootFileNames(): readonly string[];
+
+  // Returns a single source file by file name, or undefined
+  getSourceFile(fileName: string): SourceFile | undefined;
+
+  // The CompilerOptions used to create this Program
+  getCompilerOptions(): CompilerOptions;
+
+  // Current working directory from the compiler host
+  getCurrentDirectory(): string;
+}
+```
+
+### Type checking
+
+```typescript
+interface Program {
+  // Obtain a TypeChecker bound to this Program
+  getTypeChecker(): TypeChecker;
+}
+```
+
+### Diagnostics
+
+```typescript
+interface Program {
+  // Errors from parsing (missing semicolons, unclosed braces, etc.)
+  getSyntacticDiagnostics(
+    sourceFile?: SourceFile,
+    cancellationToken?: CancellationToken,
+  ): readonly DiagnosticWithLocation[];
+
+  // Type errors, undefined variables, etc.
+  getSemanticDiagnostics(
+    sourceFile?: SourceFile,
+    cancellationToken?: CancellationToken,
+  ): readonly Diagnostic[];
+
+  // Errors encountered while emitting .d.ts files
+  getDeclarationDiagnostics(
+    sourceFile?: SourceFile,
+    cancellationToken?: CancellationToken,
+  ): readonly DiagnosticWithLocation[];
+
+  // Errors from the global lib (e.g. missing ES2022 lib)
+  getGlobalDiagnostics(
+    cancellationToken?: CancellationToken,
+  ): readonly Diagnostic[];
+
+  // Errors in compiler option values
+  getOptionsDiagnostics(
+    cancellationToken?: CancellationToken,
+  ): readonly Diagnostic[];
+
+  // Errors from parsing tsconfig.json
+  getConfigFileParsingDiagnostics(): readonly Diagnostic[];
+}
+```
+
+### Emit
+
+```typescript
+interface Program {
+  emit(
+    targetSourceFile?: SourceFile,
+    writeFile?: WriteFileCallback,
+    cancellationToken?: CancellationToken,
+    emitOnlyDtsFiles?: boolean,
+    customTransformers?: CustomTransformers,
+  ): EmitResult;
+}
+```
+
+<Note>
+Omit `targetSourceFile` to emit all files in the program. Pass a `writeFile` callback to capture output in memory instead of writing to disk.
+</Note>
+
+### Statistics
+
+```typescript
+interface Program {
+  getNodeCount(): number;
+  getIdentifierCount(): number;
+  getSymbolCount(): number;
+  getTypeCount(): number;
+  getInstantiationCount(): number;
+  getRelationCacheSizes(): {
+    assignable: number;
+    identity: number;
+    subtype: number;
+    strictSubtype: number;
+  };
+
+  isSourceFileFromExternalLibrary(file: SourceFile): boolean;
+  isSourceFileDefaultLibrary(file: SourceFile): boolean;
+}
+```
+
+## The `EmitResult` interface
+
+```typescript
+interface EmitResult {
+  emitSkipped: boolean;           // true if nothing was emitted (e.g. noEmit: true)
+  diagnostics: readonly Diagnostic[];  // Declaration emit diagnostics
+  emittedFiles?: string[];        // Paths of files written to disk
+}
+```
+
+## Custom transformers
+
+You can inject AST transformers into the emit pipeline via `CustomTransformers`:
+
+```typescript
+interface CustomTransformers {
+  /** Transformers applied before built-in JS transformations. */
+  before?: (TransformerFactory<SourceFile> | CustomTransformerFactory)[];
+  /** Transformers applied after built-in JS transformations. */
+  after?: (TransformerFactory<SourceFile> | CustomTransformerFactory)[];
+  /** Transformers applied after built-in .d.ts transformations. */
+  afterDeclarations?: (TransformerFactory<Bundle | SourceFile> | CustomTransformerFactory)[];
+}
+```
+
+See the [Emitter](/api/emitter) page for how to write a transformer.
+
+## Example: create a program, type-check, and emit
+
+```typescript
+import ts from 'typescript';
+import path from 'node:path';
+
+const rootNames = [path.resolve('src/index.ts')];
+const options: ts.CompilerOptions = {
+  target: ts.ScriptTarget.ES2022,
+  module: ts.ModuleKind.CommonJS,
+  strict: true,
+  outDir: path.resolve('dist'),
+};
+
+// Create a default host that reads from the real file system
+const host = ts.createCompilerHost(options);
+
+// Build the program
+const program = ts.createProgram(rootNames, options, host);
+
+// Collect all diagnostics before emitting
+const allDiagnostics = ts.getPreEmitDiagnostics(program);
+
+if (allDiagnostics.length > 0) {
+  const formatted = ts.formatDiagnosticsWithColorAndContext(allDiagnostics, {
+    getCurrentDirectory: () => process.cwd(),
+    getCanonicalFileName: (f) => f,
+    getNewLine: () => '\n',
+  });
+  process.stderr.write(formatted);
+  process.exit(1);
+}
+
+// Emit JavaScript to the outDir
+const emitResult = program.emit();
+
+console.log('Emitted:', emitResult.emittedFiles);
+```

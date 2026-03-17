@@ -1,0 +1,179 @@
+---
+title: Installation
+description: Install TypeScript 6.0 via npm, yarn, or pnpm and set up your development environment.
+keywords: ['typescript', 'install', 'npm', 'yarn', 'pnpm', 'tsconfig', 'tsc']
+---
+
+TypeScript is distributed as an npm package. You can install it globally to use `tsc` anywhere on your machine, or locally per project so each project controls its own compiler version.
+
+## Prerequisites
+
+TypeScript requires **Node.js 14.17 or higher**. Check your version before installing:
+
+```bash
+node --version
+```
+
+<Note>
+The current release is TypeScript **6.0**. The package is published to npm as `typescript`.
+</Note>
+
+## Local installation (recommended)
+
+Installing TypeScript as a project dependency gives each project its own compiler version and prevents version conflicts across projects.
+
+<CodeGroup>
+
+```bash npm
+npm install --save-dev typescript
+```
+
+```bash yarn
+yarn add --dev typescript
+```
+
+```bash pnpm
+pnpm add --save-dev typescript
+```
+
+</CodeGroup>
+
+This adds TypeScript to your `devDependencies` and places `tsc` in `node_modules/.bin/`. Run the compiler via your package manager:
+
+```bash
+npx tsc --version
+```
+
+## Global installation
+
+Installing globally lets you run `tsc` directly from any directory without `npx`:
+
+<CodeGroup>
+
+```bash npm
+npm install --global typescript
+```
+
+```bash yarn
+yarn global add typescript
+```
+
+```bash pnpm
+pnpm add --global typescript
+```
+
+</CodeGroup>
+
+<Warning>
+Global installations can cause version mismatches between projects. For team projects, prefer a local installation pinned in `package.json`.
+</Warning>
+
+## Verifying installation
+
+After installing, confirm the compiler is available and check which version you have:
+
+```bash
+tsc --version
+# Version 6.0.0
+```
+
+For a local installation, use `npx`:
+
+```bash
+npx tsc --version
+# Version 6.0.0
+```
+
+## Creating a tsconfig.json
+
+A `tsconfig.json` file configures the TypeScript compiler for your project. The fastest way to create one is with `tsc --init`:
+
+```bash
+npx tsc --init
+```
+
+This generates a `tsconfig.json` with sensible defaults and inline comments describing every option. Here is a minimal configuration suitable for a Node.js project:
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "declaration": true,
+    "sourceMap": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true
+  },
+  "include": ["src"]
+}
+```
+
+Key options used above:
+
+| Option | Description |
+|---|---|
+| `target` | JavaScript version to emit. `es2022` targets modern Node.js and browsers. |
+| `module` | Module format for emitted code. `nodenext` supports both ESM and CJS. |
+| `moduleResolution` | How imports are resolved. Match this to `module`. |
+| `outDir` | Where compiled `.js` files are written. |
+| `rootDir` | Root of your TypeScript source files. |
+| `strict` | Enables all strict type-checking options (`noImplicitAny`, `strictNullChecks`, and more). |
+| `declaration` | Emit `.d.ts` files alongside compiled JavaScript. |
+| `sourceMap` | Emit `.js.map` files so debuggers map back to TypeScript source. |
+
+<Tip>
+Run `npx tsc --init --help` or see `tsc --all` to print every available compiler option with descriptions.
+</Tip>
+
+## Nightly builds
+
+The TypeScript team publishes nightly builds to npm as `typescript@next`. These builds include the latest in-progress features and bug fixes:
+
+<CodeGroup>
+
+```bash npm
+npm install --save-dev typescript@next
+```
+
+```bash yarn
+yarn add --dev typescript@next
+```
+
+```bash pnpm
+pnpm add --save-dev typescript@next
+```
+
+</CodeGroup>
+
+<Warning>
+Nightly builds may contain breaking changes and unfinished features. Do not use `typescript@next` in production projects.
+</Warning>
+
+## Bin entries
+
+The `typescript` package ships two executables:
+
+| Command | Description |
+|---|---|
+| `tsc` | The TypeScript compiler. Compiles `.ts` files to JavaScript. |
+| `tsserver` | The TypeScript language server. Used by editors for IntelliSense. |
+
+Both are located in `node_modules/.bin/` for local installations and on your `PATH` for global installations.
+
+## Editor support
+
+Most editors detect TypeScript automatically when `typescript` is installed in your project:
+
+- **VS Code** — Built-in TypeScript support. Uses the project's local `typescript` version when available.
+- **WebStorm / IntelliJ** — Detects `tsconfig.json` and activates TypeScript support automatically.
+- **Neovim / Vim** — Use `tsserver` via `nvim-lspconfig` or `coc-tsserver`.
+- **Emacs** — Use `lsp-mode` or `eglot` with `tsserver`.
+
+<Note>
+In VS Code, select **TypeScript: Select TypeScript Version** from the command palette to ensure the editor uses your project's local TypeScript version rather than VS Code's bundled copy.
+</Note>

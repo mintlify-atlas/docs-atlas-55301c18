@@ -1,0 +1,275 @@
+---
+title: Module Resolution
+description: How TypeScript finds and resolves module imports
+---
+
+Module resolution is the process TypeScript uses to determine what file a given `import` statement refers to. Setting the right strategy for your project is critical: the wrong choice can cause TypeScript to report missing modules even when your bundler or runtime would find them fine, or — worse — silently accept imports that will fail at runtime.
+
+## Choosing a resolution strategy
+
+You set the strategy with the `moduleResolution` compiler option. The available values are:
+
+<AccordionGroup>
+  <Accordion title="node16 / nodenext — modern Node.js projects" defaultOpen>
+    **Recommended for Node.js projects that use the native ESM or CJS module system directly (without a bundler).**
+
+    - `node16` and `nodenext` are functionally identical today; `nodenext` always tracks the latest Node.js resolution semantics.
+    - Understands Node.js's dual CJS/ESM module system, including `package.json` `"exports"` and `"imports"` fields.
+    - Requires explicit file extensions in relative imports when writing ESM (e.g., `import './utils.js'`).
+    - The `module` option must also be set to `Node16`/`NodeNext`.
+
+    ```json tsconfig.json
+    {
+      "compilerOptions": {
+        "module": "NodeNext",
+        "moduleResolution": "NodeNext"
+      }
+    }
+    ```
+  </Accordion>
+  <Accordion title="bundler — webpack, Vite, Rollup, esbuild">
+    **Recommended for projects that use a bundler.**
+
+    - Supports `package.json` `"exports"` and `"imports"` fields.
+    - Does **not** require file extensions in relative imports, matching bundler behavior.
+    - Allows importing TypeScript files directly (when `allowImportingTsExtensions` is set).
+    - Cannot be used with `module: CommonJS`.
+
+    ```json tsconfig.json
+    {
+      "compilerOptions": {
+        "module": "ESNext",
+        "moduleResolution": "Bundler"
+      }
+    }
+    ```
+  </Accordion>
+  <Accordion title="node10 (legacy node) — older Node.js CJS projects">
+    **For legacy Node.js CommonJS projects. Avoid for new code.**
+
+    - Mimics the original Node.js `require()` algorithm.
+    - Does not understand `package.json` `"exports"` fields.
+    - Does not require file extensions in imports.
+    - Maps to `node` in older TypeScript versions; both `node` and `node10` are now deprecated.
+
+    ```json tsconfig.json
+    {
+      "compilerOptions": {
+        "module": "CommonJS",
+        "moduleResolution": "node10"
+      }
+    }
+    ```
+  </Accordion>
+  <Accordion title="classic — legacy, avoid">
+    **Do not use.** This is the original pre-node resolution strategy. It does not support `node_modules` lookups correctly. It exists for backwards compatibility only.
+  </Accordion>
+</AccordionGroup>
+
+## How relative imports are resolved
+
+A relative import starts with `./`, `../`, or `/`. TypeScript resolves it relative to the importing file.
+
+For a file `src/a.ts` importing `"./utils"`, TypeScript tries (in order):
+
+1. `src/utils.ts`
+2. `src/utils.tsx`
+3. `src/utils.d.ts`
+4. `src/utils/package.json` (checking the `types` or `typings` field)
+5. `src/utils/index.ts`
+6. `src/utils/index.tsx`
+7. `src/utils/index.d.ts`
+
+<Note>
+Under `node16`/`nodenext` in ESM mode, TypeScript does **not** add extensions automatically. You must write the JavaScript extension explicitly: `import './utils.js'`. TypeScript maps `.js` back to `.ts` when searching for the source file.
+</Note>
+
+## How non-relative imports are resolved
+
+A non-relative import (e.g., `import express from 'express'`) is resolved by searching `node_modules` directories. Starting from the importing file's directory, TypeScript walks up the directory tree looking for `node_modules/express`, then `node_modules/@types/express`.
+
+For each candidate directory TypeScript checks:
+
+1. `node_modules/express/package.json` → `types` or `typings` field
+2. `node_modules/express/index.d.ts`
+3. `node_modules/@types/express/index.d.ts`
+
+## baseUrl — non-relative import roots
+
+Setting `baseUrl` makes TypeScript treat a directory as the root for non-relative imports. Imports that cannot be found in `node_modules` are looked up relative to `baseUrl`.
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "baseUrl": "./src"
+  }
+}
+```
+
+With this configuration, `import { Button } from 'components/Button'` resolves to `src/components/Button.ts` without needing a relative path.
+
+<Warning>
+`baseUrl` only affects TypeScript's type checking. At runtime, your bundler or Node.js module loader must also be configured to handle these imports. Configure your bundler's `resolve.alias` (webpack/Vite) or use a runtime loader.
+</Warning>
+
+## paths — import aliases
+
+`paths` maps import patterns to one or more replacement paths. It is resolved relative to `baseUrl` (or the directory containing `tsconfig.json` when `baseUrl` is not set).
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@app/*": ["src/*"],
+      "@utils": ["src/utils/index.ts"],
+      "lodash": ["node_modules/lodash-es"]
+    }
+  }
+}
+```
+
+You can provide multiple fallback paths in the array. TypeScript tries each in order.
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "paths": {
+      "@shared/*": [
+        "packages/shared/src/*",
+        "packages/shared/dist/*"
+      ]
+    }
+  }
+}
+```
+
+<Warning>
+Like `baseUrl`, `paths` only teaches TypeScript where to find types. You must configure your bundler or use a runtime path rewriter (e.g., `tsconfig-paths`, `tsc-alias`) to handle these paths at runtime.
+</Warning>
+
+## rootDirs — virtual directory structures
+
+`rootDirs` tells TypeScript to treat multiple directories as if they were merged into a single virtual directory. This is useful when build tools generate code alongside your source files.
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "rootDirs": ["src", "generated"]
+  }
+}
+```
+
+With this, a file in `src/` can import from `generated/` using a relative path as if both were in the same directory:
+
+```typescript src/index.ts
+import { schema } from './schema'; // resolved from generated/schema.ts
+```
+
+## typeRoots and types — @types packages
+
+By default TypeScript automatically includes every package found in `node_modules/@types` when those packages don't have any specific `types` filter. You can override this behavior.
+
+<Tabs>
+  <Tab title="typeRoots">
+    Replace the default `node_modules/@types` search locations with a custom list:
+
+    ```json tsconfig.json
+    {
+      "compilerOptions": {
+        "typeRoots": ["./typings", "./node_modules/@types"]
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="types">
+    Allow only specific packages from `@types` to be auto-included. Other `@types` packages can still be referenced via `/// <reference types="..." />`:
+
+    ```json tsconfig.json
+    {
+      "compilerOptions": {
+        "types": ["node", "jest", "react"]
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## package.json exports field
+
+The `node16`, `nodenext`, and `bundler` resolution modes all support the `exports` field in `package.json`. This field lets package authors control exactly which subpaths are publicly accessible and which conditions (e.g., `import`, `require`, `types`) apply.
+
+For a package with:
+
+```json node_modules/my-pkg/package.json
+{
+  "name": "my-pkg",
+  "exports": {
+    ".": {
+      "import": { "types": "./dist/esm/index.d.ts", "default": "./dist/esm/index.js" },
+      "require": { "types": "./dist/cjs/index.d.ts", "default": "./dist/cjs/index.js" }
+    },
+    "./utils": "./dist/utils.js"
+  }
+}
+```
+
+TypeScript resolves `import ... from 'my-pkg'` to `./dist/esm/index.d.ts` (ESM context) or `./dist/cjs/index.d.ts` (CJS context), and `import ... from 'my-pkg/utils'` to `./dist/utils.d.ts`.
+
+Controlling exports resolution:
+
+- `resolvePackageJsonExports: true` — consult `exports` (default when `moduleResolution` is `node16`, `nodenext`, or `bundler`).
+- `resolvePackageJsonImports: true` — consult `imports` for `#`-prefixed imports.
+- `customConditions` — add extra conditions (e.g., `"development"`) to the resolution.
+
+## Extension-related options
+
+<AccordionGroup>
+  <Accordion title="allowImportingTsExtensions">
+    Allows writing imports with explicit TypeScript extensions (`.ts`, `.tsx`, `.mts`, `.cts`). Requires `moduleResolution: bundler` and `noEmit: true` or `emitDeclarationOnly: true`.
+
+    ```json tsconfig.json
+    {
+      "compilerOptions": {
+        "moduleResolution": "Bundler",
+        "allowImportingTsExtensions": true,
+        "noEmit": true
+      }
+    }
+    ```
+
+    ```typescript
+    import { helper } from './helper.ts'; // OK with allowImportingTsExtensions
+    ```
+  </Accordion>
+  <Accordion title="resolveJsonModule">
+    Allows importing `.json` files as modules. TypeScript infers the type from the JSON structure.
+
+    ```json tsconfig.json
+    {
+      "compilerOptions": { "resolveJsonModule": true }
+    }
+    ```
+
+    ```typescript
+    import config from './config.json';
+    console.log(config.port); // typed as number
+    ```
+  </Accordion>
+  <Accordion title="resolvePackageJsonExports">
+    Controls whether TypeScript consults the `exports` field of `package.json` files when resolving imports. Enabled by default for `node16`, `nodenext`, and `bundler`.
+  </Accordion>
+  <Accordion title="rewriteRelativeImportExtensions">
+    Rewrites `.ts`, `.tsx`, `.mts`, and `.cts` extensions in relative imports to their JavaScript equivalents (`.js`, `.jsx`, `.mjs`, `.cjs`) in emitted output. Useful in projects that write explicit TypeScript extensions in source but need JavaScript extensions in output.
+  </Accordion>
+</AccordionGroup>
+
+## Debugging resolution
+
+Set `traceResolution: true` in `compilerOptions` (or pass `--traceResolution` on the command line) to get a detailed log of every lookup TypeScript performs:
+
+```bash
+tsc --traceResolution 2>&1 | grep "express"
+```
+
+You can also run `tsc --explainFiles` to see which files were included and why.

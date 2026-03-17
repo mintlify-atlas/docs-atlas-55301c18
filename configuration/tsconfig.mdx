@@ -1,0 +1,198 @@
+---
+title: tsconfig.json
+description: Configure the TypeScript compiler with tsconfig.json
+---
+
+A `tsconfig.json` file marks the root of a TypeScript project and tells the compiler how to transform your TypeScript source into JavaScript. Every setting that controls type checking, output format, module resolution, and more lives in this file.
+
+When you run `tsc` without specifying a file, TypeScript searches for `tsconfig.json` starting from the current directory and walking up the directory tree until it finds one. When you run `tsc --project path/to/tsconfig.json` (or `-p`), TypeScript uses that file directly.
+
+## JSON structure
+
+A `tsconfig.json` file is a JSON file that supports the following top-level fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `compilerOptions` | object | Options passed to the TypeScript compiler |
+| `include` | string[] | Glob patterns of files to include |
+| `exclude` | string[] | Glob patterns of files to exclude |
+| `files` | string[] | Explicit list of files to include |
+| `extends` | string \| string[] | Path(s) to base configuration files to inherit from |
+| `references` | object[] | Project references for composite builds |
+
+## Minimal tsconfig.json
+
+This is the smallest valid configuration — TypeScript applies its defaults for everything not specified:
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true
+  }
+}
+```
+
+## Recommended configurations
+
+<Tabs>
+  <Tab title="Node.js">
+    Use this configuration for Node.js applications and packages:
+
+    ```json tsconfig.json
+    {
+      "compilerOptions": {
+        "target": "ES2022",
+        "module": "NodeNext",
+        "moduleResolution": "NodeNext",
+        "outDir": "./dist",
+        "rootDir": "./src",
+        "declaration": true,
+        "declarationMap": true,
+        "sourceMap": true,
+        "strict": true,
+        "esModuleInterop": true,
+        "forceConsistentCasingInFileNames": true,
+        "skipLibCheck": true
+      },
+      "include": ["src"],
+      "exclude": ["node_modules", "dist"]
+    }
+    ```
+  </Tab>
+  <Tab title="Browser">
+    Use this configuration for browser applications (e.g., with a bundler like Vite or webpack):
+
+    ```json tsconfig.json
+    {
+      "compilerOptions": {
+        "target": "ES2020",
+        "module": "ESNext",
+        "moduleResolution": "Bundler",
+        "lib": ["ES2020", "DOM", "DOM.Iterable"],
+        "jsx": "react-jsx",
+        "outDir": "./dist",
+        "rootDir": "./src",
+        "declaration": true,
+        "sourceMap": true,
+        "strict": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "noFallthroughCasesInSwitch": true,
+        "esModuleInterop": true,
+        "allowSyntheticDefaultImports": true,
+        "forceConsistentCasingInFileNames": true,
+        "skipLibCheck": true
+      },
+      "include": ["src"]
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## extends
+
+The `extends` field lets you inherit settings from another configuration file. TypeScript merges the base configuration with the current one, with the current file taking priority.
+
+```json tsconfig.json
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist"
+  },
+  "include": ["src"]
+}
+```
+
+You can also extend from npm packages. Several community base configurations are available:
+
+```json tsconfig.json
+{
+  "extends": "@tsconfig/node22/tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist"
+  }
+}
+```
+
+As of TypeScript 5.0, `extends` accepts an array so you can inherit from multiple base files:
+
+```json tsconfig.json
+{
+  "extends": [
+    "./tsconfig.base.json",
+    "./tsconfig.paths.json"
+  ]
+}
+```
+
+<Note>
+When multiple base files specify the same option, the last entry in the array wins. The extending file always takes final precedence.
+</Note>
+
+## include and exclude
+
+Use `include` and `exclude` to control which files TypeScript compiles. Both fields accept glob patterns.
+
+```json tsconfig.json
+{
+  "include": [
+    "src/**/*",
+    "tests/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/*.spec.ts"
+  ]
+}
+```
+
+Glob pattern support:
+
+| Pattern | Matches |
+|---|---|
+| `*` | Any file name (not path separators) |
+| `?` | One character (not path separators) |
+| `**/` | Any directory, nested to any depth |
+
+If you omit `include`, TypeScript includes all TypeScript files (`.ts`, `.tsx`, `.d.ts`) in the directory containing `tsconfig.json` and its subdirectories. If you omit `exclude`, TypeScript automatically excludes `node_modules`, `bower_components`, `jspm_packages`, and the `outDir` directory.
+
+<Warning>
+Files listed in `files` or imported by included files are always compiled regardless of `exclude` patterns.
+</Warning>
+
+## files
+
+The `files` field specifies an explicit list of files to include. Unlike `include`, `files` takes exact paths — no glob patterns.
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ES2022"
+  },
+  "files": [
+    "src/index.ts",
+    "src/types.d.ts"
+  ]
+}
+```
+
+Use `files` when you have a small, fixed set of entry points or when you need precise control over which files enter the compilation. For most projects, `include` is more practical.
+
+## references
+
+The `references` field enables project references, which let you split a large codebase into independently buildable pieces.
+
+```json tsconfig.json
+{
+  "references": [
+    { "path": "./packages/core" },
+    { "path": "./packages/utils" }
+  ]
+}
+```
+
+Each referenced project must have `"composite": true` in its `compilerOptions`. See [Project References](/configuration/project-references) for the full guide.

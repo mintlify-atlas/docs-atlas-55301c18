@@ -1,0 +1,251 @@
+---
+title: 'Emitter'
+description: 'How the TypeScript emitter generates JavaScript output, and how to write custom AST transformers.'
+keywords: ['typescript emitter', 'custom transformer', 'TransformerFactory', 'visitEachChild', 'NodeFactory']
+---
+
+The emitter converts a type-checked TypeScript AST into JavaScript (and optionally `.d.ts` declaration files and source maps). You can inject custom AST transformers into the emit pipeline to modify output without touching source files.
+
+## Triggering emit
+
+Call `emit` on a `Program`:
+
+```typescript
+program.emit(
+  targetSourceFile?: SourceFile,
+  writeFile?: WriteFileCallback,
+  cancellationToken?: CancellationToken,
+  emitOnlyDtsFiles?: boolean,
+  customTransformers?: CustomTransformers,
+): EmitResult
+```
+
+| Parameter | Description |
+|-----------|-------------|
+| `targetSourceFile` | Emit only this file. Omit to emit all files in the program. |
+| `writeFile` | Custom callback to receive output. Omit to write to disk via the `CompilerHost`. |
+| `cancellationToken` | Token checked during long-running operations. |
+| `emitOnlyDtsFiles` | When `true`, skip JS output and emit only `.d.ts` files. |
+| `customTransformers` | Transformers injected before and/or after the built-in transforms. |
+
+### `EmitResult`
+
+```typescript
+interface EmitResult {
+  emitSkipped: boolean;               // true when noEmit or all files are skipped
+  diagnostics: readonly Diagnostic[]; // Declaration emit diagnostics
+  emittedFiles?: string[];            // Paths of files the compiler wrote to disk
+}
+```
+
+### `WriteFileCallback`
+
+```typescript
+type WriteFileCallback = (
+  fileName: string,
+  text: string,
+  writeByteOrderMark: boolean,
+  onError?: (message: string) => void,
+  sourceFiles?: readonly SourceFile[],
+  data?: WriteFileCallbackData,
+) => void;
+```
+
+Pass a `WriteFileCallback` to capture emitted JavaScript in memory:
+
+```typescript
+const outputs = new Map<string, string>();
+
+program.emit(undefined, (fileName, text) => {
+  outputs.set(fileName, text);
+});
+
+for (const [name, text] of outputs) {
+  console.log(`--- ${name} ---`);
+  console.log(text);
+}
+```
+
+## Pre-emit diagnostics
+
+Before emitting, collect all diagnostics with the convenience helper:
+
+```typescript
+function getPreEmitDiagnostics(
+  program: Program,
+  sourceFile?: SourceFile,
+  cancellationToken?: CancellationToken,
+): readonly Diagnostic[]
+```
+
+This merges config-file, options, syntactic, global, semantic, and declaration diagnostics in one call.
+
+## Custom transformers
+
+Custom transformers let you inspect or rewrite the AST during emit. There are three injection points:
+
+```typescript
+interface CustomTransformers {
+  /** Run before built-in JS transformations (type erasure, decorators, etc.) */
+  before?: (TransformerFactory<SourceFile> | CustomTransformerFactory)[];
+  /** Run after built-in JS transformations */
+  after?: (TransformerFactory<SourceFile> | CustomTransformerFactory)[];
+  /** Run after built-in .d.ts transformations */
+  afterDeclarations?: (TransformerFactory<Bundle | SourceFile> | CustomTransformerFactory)[];
+}
+```
+
+### `TransformerFactory` and `Transformer`
+
+```typescript
+// A factory: receives the TransformationContext, returns a Transformer
+type TransformerFactory<T extends Node> = (context: TransformationContext) => Transformer<T>;
+
+// A transformer: receives a node and returns a (possibly new) node
+type Transformer<T extends Node> = (node: T) => T;
+```
+
+The `TransformationContext` gives your transformer access to:
+
+```typescript
+interface CoreTransformationContext {
+  readonly factory: NodeFactory;  // Use this to create new nodes
+  getCompilerOptions(): CompilerOptions;
+  startLexicalEnvironment(): void;
+  endLexicalEnvironment(): Statement[] | undefined;
+  hoistFunctionDeclaration(node: FunctionDeclaration): void;
+  hoistVariableDeclaration(node: Identifier): void;
+  // ...
+}
+```
+
+### `NodeFactory`
+
+`context.factory` is a `NodeFactory` — the canonical way to create AST nodes inside a transformer. Do not call node constructors directly.
+
+Common factory methods:
+
+```typescript
+factory.createIdentifier(text: string): Identifier
+factory.createStringLiteral(text: string): StringLiteral
+factory.createNumericLiteral(value: string | number): NumericLiteral
+factory.createCallExpression(
+  expression: Expression,
+  typeArguments: readonly TypeNode[] | undefined,
+  argumentsArray: readonly Expression[] | undefined,
+): CallExpression
+factory.createExpressionStatement(expression: Expression): ExpressionStatement
+factory.createBlock(statements: readonly Statement[], multiLine?: boolean): Block
+factory.updateFunctionDeclaration(
+  node: FunctionDeclaration,
+  modifiers: readonly ModifierLike[] | undefined,
+  asteriskToken: AsteriskToken | undefined,
+  name: Identifier | undefined,
+  typeParameters: readonly TypeParameterDeclaration[] | undefined,
+  parameters: readonly ParameterDeclaration[],
+  type: TypeNode | undefined,
+  body: Block | undefined,
+): FunctionDeclaration
+```
+
+<Note>
+Always use `factory.update*` methods to mutate existing nodes. They preserve the original node reference, which the emitter uses for source-map tracking.
+</Note>
+
+### Writing a transformer
+
+A transformer follows this pattern:
+
+1. Receive a `TransformationContext` from the factory.
+2. Return a `Transformer<SourceFile>` function.
+3. Inside that function, recursively visit children with `visitEachChild`.
+4. Intercept the nodes you want to modify and return new nodes via `context.factory`.
+
+```typescript
+import ts from 'typescript';
+
+function myTransformerFactory(
+  context: ts.TransformationContext,
+): ts.Transformer<ts.SourceFile> {
+  const { factory } = context;
+
+  function visitor(node: ts.Node): ts.Node {
+    // Recurse into all children first
+    return ts.visitEachChild(node, visitor, context);
+  }
+
+  return (sourceFile) =>
+    ts.visitNode(sourceFile, visitor) as ts.SourceFile;
+}
+```
+
+## Example: add `console.log` at the start of every function body
+
+This transformer inserts a `console.log('entering <name>')` statement at the top of every function declaration body:
+
+```typescript
+import ts from 'typescript';
+
+function addFunctionLogging(
+  context: ts.TransformationContext,
+): ts.Transformer<ts.SourceFile> {
+  const { factory } = context;
+
+  function buildLogStatement(name: string): ts.Statement {
+    // Builds: console.log('entering <name>')
+    return factory.createExpressionStatement(
+      factory.createCallExpression(
+        factory.createPropertyAccessExpression(
+          factory.createIdentifier('console'),
+          factory.createIdentifier('log'),
+        ),
+        undefined,
+        [factory.createStringLiteral(`entering ${name}`)],
+      ),
+    );
+  }
+
+  function visitor(node: ts.Node): ts.Node {
+    if (
+      ts.isFunctionDeclaration(node) &&
+      node.body &&
+      node.name
+    ) {
+      const logStmt = buildLogStatement(node.name.text);
+      const newBody = factory.updateBlock(node.body, [
+        logStmt,
+        ...node.body.statements,
+      ]);
+      return factory.updateFunctionDeclaration(
+        node,
+        node.modifiers,
+        node.asteriskToken,
+        node.name,
+        node.typeParameters,
+        node.parameters,
+        node.type,
+        newBody,
+      );
+    }
+    return ts.visitEachChild(node, visitor, context);
+  }
+
+  return (sourceFile) =>
+    ts.visitNode(sourceFile, visitor) as ts.SourceFile;
+}
+
+// Use the transformer during emit
+const outputs = new Map<string, string>();
+
+program.emit(
+  undefined,
+  (fileName, text) => outputs.set(fileName, text),
+  undefined,
+  false,
+  { before: [addFunctionLogging] },
+);
+```
+
+<Tip>
+To debug a transformer, emit to a `Map` (as above) and inspect the generated JavaScript strings directly.
+</Tip>

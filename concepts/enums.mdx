@@ -1,0 +1,281 @@
+---
+title: Enums
+description: Use TypeScript enums to define a set of named constants. Covers numeric, string, const, and heterogeneous enums, reverse mappings, computed members, and when to prefer union types.
+keywords: ['typescript', 'enums', 'numeric enum', 'string enum', 'const enum', 'reverse mapping', 'union types']
+---
+
+Enums let you define a named set of constants. TypeScript supports four kinds: numeric, string, const, and heterogeneous. Each compiles differently to JavaScript, which affects bundle size and debuggability.
+
+## Numeric enums
+
+Numeric enums are the default. Members auto-increment starting from `0` unless you specify a starting value:
+
+```typescript twoslash
+enum Direction {
+  North,  // 0
+  South,  // 1
+  East,   // 2
+  West,   // 3
+}
+
+const heading: Direction = Direction.North;
+console.log(heading); // 0
+```
+
+You can specify a starting value or assign specific values to members:
+
+```typescript twoslash
+enum StatusCode {
+  OK = 200,
+  Created = 201,
+  BadRequest = 400,
+  Unauthorized = 401,
+  NotFound = 404,
+  InternalServerError = 500,
+}
+
+function handleResponse(code: StatusCode): string {
+  if (code === StatusCode.OK) return "Success";
+  if (code === StatusCode.NotFound) return "Not found";
+  return "Error";
+}
+```
+
+### Reverse mappings
+
+Numeric enums generate a **reverse mapping** at runtime — you can look up the name from the value:
+
+```typescript twoslash
+enum Direction {
+  North = 0,
+  South = 1,
+  East = 2,
+  West = 3,
+}
+
+console.log(Direction[0]);         // "North"
+console.log(Direction["North"]);   // 0
+console.log(Direction[Direction.East]); // "East"
+```
+
+This works because the TypeScript compiler emits a bidirectional object:
+
+```javascript
+// Compiled JavaScript
+var Direction;
+(function (Direction) {
+    Direction[Direction["North"] = 0] = "North";
+    Direction[Direction["South"] = 1] = "South";
+    Direction[Direction["East"] = 2] = "East";
+    Direction[Direction["West"] = 3] = "West";
+})(Direction || (Direction = {}));
+```
+
+<Note>
+Reverse mappings are only available on numeric enums. String enums do not generate them.
+</Note>
+
+## String enums
+
+String enums require explicit values for every member. They have no reverse mapping, but their values are human-readable at runtime:
+
+```typescript twoslash
+enum LogLevel {
+  Debug = "DEBUG",
+  Info  = "INFO",
+  Warn  = "WARN",
+  Error = "ERROR",
+}
+
+function log(level: LogLevel, message: string): void {
+  console.log(`[${level}] ${message}`);
+}
+
+log(LogLevel.Info, "Server started"); // [INFO] Server started
+```
+
+String enums compile to a simple object with no reverse mapping:
+
+```javascript
+// Compiled JavaScript
+var LogLevel;
+(function (LogLevel) {
+    LogLevel["Debug"] = "DEBUG";
+    LogLevel["Info"]  = "INFO";
+    LogLevel["Warn"]  = "WARN";
+    LogLevel["Error"] = "ERROR";
+})(LogLevel || (LogLevel = {}));
+```
+
+## Const enums
+
+Const enums are completely erased at compile time. Every use is replaced with the literal value inline, so no enum object exists in the emitted JavaScript:
+
+```typescript twoslash
+const enum Axis {
+  X = 0,
+  Y = 1,
+  Z = 2,
+}
+
+const axis: Axis = Axis.X;
+console.log(axis); // Compiled to: console.log(0)
+```
+
+The compiled output:
+
+```javascript
+// Compiled JavaScript — no enum object, just inline literals
+const axis = 0 /* Axis.X */;
+console.log(axis);
+```
+
+Const enums reduce bundle size, but they come with restrictions:
+
+<Warning>
+Const enums cannot be used in ambient contexts (`.d.ts` files consumed by other projects) unless you enable `preserveConstEnums` in `tsconfig.json`. Libraries that publish `const enum` can break consumers who use `isolatedModules`. Prefer regular `const enum` within an application and regular enums in published libraries.
+</Warning>
+
+## Heterogeneous enums
+
+Heterogeneous enums mix numeric and string members. TypeScript allows this but it's rarely useful:
+
+```typescript twoslash
+enum Mixed {
+  No  = 0,
+  Yes = "YES",
+}
+```
+
+<Tip>
+Avoid heterogeneous enums. They provide no practical advantage and can lead to confusing code. Use a pure string or numeric enum instead.
+</Tip>
+
+## Computed and constant members
+
+Enum members can be **constant** (evaluated at compile time) or **computed** (evaluated at runtime).
+
+**Constant members** include:
+- Literal values (`0`, `1`, `"hello"`)
+- References to earlier members
+- Simple arithmetic (`+`, `-`, `*`, `/`, `%`, `~`, `<<`, `>>`, `>>>`, `&`, `|`, `^`)
+
+**Computed members** call functions or use expressions that can't be resolved at compile time:
+
+```typescript twoslash
+function getBase(): number { return 100; }
+
+enum FileAccess {
+  // Constant members
+  None,          // 0
+  Read    = 1 << 1, // 2
+  Write   = 1 << 2, // 4
+  ReadWrite = Read | Write, // 6
+  // Computed member — evaluated at runtime
+  // Base = getBase(),
+}
+```
+
+<Note>
+Computed members cannot be followed by constant members without an explicit initializer, because TypeScript can't determine what value to auto-increment from.
+</Note>
+
+## Enum member types
+
+With literal enum members (no computed values), each member becomes its own type. This enables very precise typing:
+
+```typescript twoslash
+enum ShapeKind {
+  Circle,
+  Square,
+}
+
+interface Circle {
+  kind: ShapeKind.Circle;
+  radius: number;
+}
+
+interface Square {
+  kind: ShapeKind.Square;
+  side: number;
+}
+
+type Shape = Circle | Square;
+
+function area(s: Shape): number {
+  if (s.kind === ShapeKind.Circle) {
+    return Math.PI * s.radius ** 2;
+  }
+  return s.side ** 2;
+}
+```
+
+## When to use enums vs. union types
+
+Enums and union types of string literals often solve the same problem. Here's how to decide:
+
+<Tabs>
+  <Tab title="Use enums when">
+- You want a runtime object you can iterate over or reverse-map
+- You want to group related constants under a namespace
+- You are working in a codebase that already uses enums consistently
+- The constants carry semantic meaning beyond their values
+
+```typescript twoslash
+enum Permission {
+  Read    = "READ",
+  Write   = "WRITE",
+  Execute = "EXECUTE",
+}
+
+// Iterate at runtime
+const allPermissions = Object.values(Permission);
+```
+  </Tab>
+  <Tab title="Use union types when">
+- You want a purely type-level construct with zero runtime overhead
+- The values are already string literals used elsewhere (API responses, config)
+- You want easier compatibility with external systems
+- You're writing a library and want to avoid forcing consumers to import an enum object
+
+```typescript twoslash
+type Permission = "READ" | "WRITE" | "EXECUTE";
+
+function checkPermission(p: Permission): boolean {
+  return p === "READ";
+}
+
+// Works directly with string literals — no import of enum needed
+checkPermission("WRITE");
+```
+  </Tab>
+</Tabs>
+
+<Note>
+In modern TypeScript codebases, string literal unions are often preferred over enums because they have no runtime overhead, work seamlessly with `as const` objects, and interoperate better with JSON-based APIs.
+</Note>
+
+## Enums as flags with bitwise operations
+
+Numeric enums are commonly used for bitmask flags:
+
+```typescript twoslash
+const enum FilePermission {
+  None      = 0,
+  Read      = 1 << 0, // 1
+  Write     = 1 << 1, // 2
+  Execute   = 1 << 2, // 4
+}
+
+function canRead(perms: number): boolean {
+  return (perms & FilePermission.Read) !== 0;
+}
+
+function canWrite(perms: number): boolean {
+  return (perms & FilePermission.Write) !== 0;
+}
+
+const userPerms = FilePermission.Read | FilePermission.Write; // 3
+console.log(canRead(userPerms));  // true
+console.log(canWrite(userPerms)); // true
+```

@@ -1,0 +1,235 @@
+---
+title: Namespaces
+description: Organise related declarations under a shared name using TypeScript namespaces, and understand when to use namespaces versus ES modules.
+keywords: [namespaces, internal modules, declare namespace, ambient namespaces, reference directives]
+---
+
+Namespaces (formerly called "internal modules" in early TypeScript) are a way to group related declarations under a single named scope. They are most useful in ambient declaration files and in situations where you are not using a module bundler.
+
+<Warning>
+  In most modern TypeScript projects you should prefer ES modules (`import`/`export`) over namespaces. Namespaces do not work well with tree-shaking, and mixing them with module code causes confusing scoping problems. Use namespaces primarily in `.d.ts` files and for organising global declarations.
+</Warning>
+
+## Namespace syntax
+
+```typescript twoslash
+namespace Validation {
+  export interface StringValidator {
+    isAcceptable(s: string): boolean;
+  }
+
+  const lettersRegexp = /^[A-Za-z]+$/;
+  const numberRegexp = /^[0-9]+$/;
+
+  export class LettersOnlyValidator implements StringValidator {
+    isAcceptable(s: string): boolean {
+      return lettersRegexp.test(s);
+    }
+  }
+
+  export class ZipCodeValidator implements StringValidator {
+    isAcceptable(s: string): boolean {
+      return s.length === 5 && numberRegexp.test(s);
+    }
+  }
+}
+
+const validator: Validation.StringValidator = new Validation.LettersOnlyValidator();
+console.log(validator.isAcceptable('Hello')); // true
+```
+
+Members you want accessible outside the namespace must be marked `export`. Unexported members are private to the namespace body.
+
+## Nested namespaces
+
+Namespaces can be nested arbitrarily:
+
+```typescript twoslash
+namespace Shapes {
+  export namespace Polygons {
+    export class Triangle {
+      constructor(
+        public a: number,
+        public b: number,
+        public c: number,
+      ) {}
+
+      perimeter(): number {
+        return this.a + this.b + this.c;
+      }
+    }
+
+    export class Square {
+      constructor(public side: number) {}
+      area(): number { return this.side ** 2; }
+    }
+  }
+}
+
+const t = new Shapes.Polygons.Triangle(3, 4, 5);
+console.log(t.perimeter()); // 12
+```
+
+To avoid typing the full qualified name repeatedly, use an alias:
+
+```typescript
+import Triangle = Shapes.Polygons.Triangle;
+const t2 = new Triangle(5, 12, 13);
+```
+
+## Declaration merging
+
+Multiple `namespace` blocks with the same name are merged into a single namespace. This lets you split a large namespace across multiple statements or files:
+
+```typescript twoslash
+namespace Http {
+  export interface Request {
+    method: string;
+    url: string;
+  }
+}
+
+namespace Http {
+  export interface Response {
+    status: number;
+    body: string;
+  }
+
+  export function send(res: Response): void {
+    console.log(res.status, res.body);
+  }
+}
+
+// Both interfaces and the function are available:
+const req: Http.Request = { method: 'GET', url: '/api/users' };
+const res: Http.Response = { status: 200, body: '[]' };
+Http.send(res);
+```
+
+Namespaces also merge with classes and enums:
+
+```typescript twoslash
+class Album {
+  label: Album.AlbumLabel = { name: 'unknown' };
+}
+
+namespace Album {
+  export interface AlbumLabel {
+    name: string;
+  }
+}
+```
+
+## Namespaces across multiple files
+
+When you split a namespace across multiple files, each file must reference the others using triple-slash directives so the compiler knows the dependency order:
+
+```typescript validation.ts
+namespace Validation {
+  export interface StringValidator {
+    isAcceptable(s: string): boolean;
+  }
+}
+```
+
+```typescript lettersValidator.ts
+/// <reference path="validation.ts" />
+namespace Validation {
+  const lettersRegexp = /^[A-Za-z]+$/;
+
+  export class LettersOnlyValidator implements StringValidator {
+    isAcceptable(s: string): boolean {
+      return lettersRegexp.test(s);
+    }
+  }
+}
+```
+
+```typescript app.ts
+/// <reference path="validation.ts" />
+/// <reference path="lettersValidator.ts" />
+
+const v = new Validation.LettersOnlyValidator();
+```
+
+When compiling multi-file namespaces without a bundler, use `--outFile` to concatenate all files in the correct order:
+
+```bash
+tsc --outFile dist/bundle.js app.ts
+```
+
+## Ambient namespaces in .d.ts files
+
+Ambient namespaces describe libraries that expose a global object (common in older UMD or IIFE-based libraries loaded via `<script>` tags).
+
+```typescript types/jquery.d.ts
+declare namespace $ {
+  function ajax(settings: AjaxSettings): JqXHR;
+  function get(url: string, callback?: AjaxCallback): JqXHR;
+
+  interface AjaxSettings {
+    url: string;
+    method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
+    data?: unknown;
+    success?: (data: unknown) => void;
+    error?: (error: Error) => void;
+  }
+
+  interface JqXHR {
+    abort(): void;
+    then<T>(resolve: (value: T) => void): JqXHR;
+  }
+
+  type AjaxCallback = (data: unknown, textStatus: string) => void;
+}
+```
+
+Ambient namespaces are a classic pattern in DefinitelyTyped for describing DOM-level or legacy global APIs.
+
+## DOM API-style declarations
+
+The TypeScript standard library itself uses ambient namespaces extensively. The DOM lib uses a namespace-free style for interfaces but uses `declare var` for globals. A real-world example of the ambient namespace pattern comes from the Web Animations API:
+
+```typescript
+declare namespace CSS {
+  function supports(property: string, value: string): boolean;
+  function supports(conditionText: string): boolean;
+
+  const paintWorklet: Worklet;
+
+  namespace Highlights {
+    function get(name: string): Highlight | undefined;
+    function has(name: string): boolean;
+    function set(name: string, highlight: Highlight): void;
+    function delete(name: string): boolean;
+    function clear(): void;
+  }
+}
+```
+
+## Namespaces vs ES modules
+
+| | Namespaces | ES modules |
+| --- | --- | --- |
+| **Syntax** | `namespace Foo { export ... }` | `export const foo = ...` |
+| **Loading** | Requires `<script>` order or `--outFile` | Handled by bundler or native ESM |
+| **Tree-shaking** | Not supported | Fully supported |
+| **Dynamic import** | Not possible | `import('./module')` |
+| **Best for** | `.d.ts` ambient declarations, legacy codebases | All new code |
+
+For new projects, write ES modules. Reserve namespaces for:
+
+- Authoring `.d.ts` declaration files for global or UMD libraries
+- Organising declarations inside a single large `.d.ts` file
+- Augmenting existing global namespaces (e.g., extending `NodeJS.ProcessEnv`)
+
+```typescript types/env.d.ts
+declare namespace NodeJS {
+  interface ProcessEnv {
+    DATABASE_URL: string;
+    REDIS_URL: string;
+    PORT?: string;
+    NODE_ENV: 'development' | 'test' | 'production';
+  }
+}
+```

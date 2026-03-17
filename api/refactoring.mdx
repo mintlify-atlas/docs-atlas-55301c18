@@ -1,0 +1,345 @@
+---
+title: 'Refactoring'
+description: 'Query and apply built-in TypeScript refactors such as extract function, move to file, and convert arrow function using getApplicableRefactors and getEditsForRefactor.'
+keywords: ['refactoring', 'getApplicableRefactors', 'getEditsForRefactor', 'ApplicableRefactorInfo', 'extract function']
+---
+
+The refactoring API is a two-step process: first query which refactors are available at a position or range, then request the text edits for a specific refactor action.
+
+## `getApplicableRefactors`
+
+Returns the refactors available at the given position or selection range.
+
+```typescript
+languageService.getApplicableRefactors(
+    fileName: string,
+    positionOrRange: number | TextRange,
+    preferences: UserPreferences | undefined,
+    triggerReason?: RefactorTriggerReason,
+    kind?: string,
+    includeInteractiveActions?: boolean,
+): ApplicableRefactorInfo[]
+```
+
+<ResponseField name="fileName" type="string" required>
+  Absolute path to the file.
+</ResponseField>
+
+<ResponseField name="positionOrRange" type="number | TextRange" required>
+  A cursor offset (number) or a `{ pos: number; end: number }` selection range.
+</ResponseField>
+
+<ResponseField name="preferences" type="UserPreferences | undefined" required>
+  User preferences. Controls behaviour such as quote style and import path format.
+</ResponseField>
+
+<ResponseField name="triggerReason" type="RefactorTriggerReason">
+  Either `"implicit"` (triggered automatically) or `"invoked"` (triggered explicitly by the user). Defaults to `"invoked"`.
+</ResponseField>
+
+<ResponseField name="kind" type="string">
+  Filter to a specific refactor kind prefix (dot-separated). For example, pass `"refactor.extract"` to receive only extract refactors.
+</ResponseField>
+
+<ResponseField name="includeInteractiveActions" type="boolean">
+  When `true`, include refactor actions that require additional arguments. Inspect `RefactorActionInfo.isInteractive` before offering these to users.
+</ResponseField>
+
+## `getEditsForRefactor`
+
+Returns the text changes that apply a specific refactor action.
+
+```typescript
+languageService.getEditsForRefactor(
+    fileName: string,
+    formatOptions: FormatCodeSettings,
+    positionOrRange: number | TextRange,
+    refactorName: string,
+    actionName: string,
+    preferences: UserPreferences | undefined,
+    interactiveRefactorArguments?: InteractiveRefactorArguments,
+): RefactorEditInfo | undefined
+```
+
+<ResponseField name="formatOptions" type="FormatCodeSettings" required>
+  Formatting settings used when generating the new code.
+</ResponseField>
+
+<ResponseField name="refactorName" type="string" required>
+  The `name` from `ApplicableRefactorInfo`.
+</ResponseField>
+
+<ResponseField name="actionName" type="string" required>
+  The `name` from one of the `RefactorActionInfo` entries inside the chosen `ApplicableRefactorInfo`.
+</ResponseField>
+
+<ResponseField name="interactiveRefactorArguments" type="InteractiveRefactorArguments">
+  Required for interactive refactors (those with `isInteractive: true`). Currently the only field is `targetFile: string`.
+</ResponseField>
+
+## `ApplicableRefactorInfo`
+
+```typescript
+interface ApplicableRefactorInfo {
+    name: string;
+    description: string;
+    inlineable?: boolean;
+    actions: RefactorActionInfo[];
+}
+```
+
+<ResponseField name="name" type="string">
+  Programmatic name passed to `getEditsForRefactor`.
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  Human-readable label for the refactor group.
+</ResponseField>
+
+<ResponseField name="inlineable" type="boolean">
+  When `true`, the actions can be promoted out of their group and shown directly in the context menu. Defaults to `true`.
+</ResponseField>
+
+<ResponseField name="actions" type="RefactorActionInfo[]">
+  The individual actions within this refactor.
+</ResponseField>
+
+## `RefactorActionInfo`
+
+```typescript
+interface RefactorActionInfo {
+    name: string;
+    description: string;
+    notApplicableReason?: string;
+    kind?: string;
+    isInteractive?: boolean;
+    range?: { start: { line: number; offset: number }; end: { line: number; offset: number } };
+}
+```
+
+<ResponseField name="name" type="string">
+  Programmatic name passed as `actionName` to `getEditsForRefactor`.
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  Human-readable label shown in menus.
+</ResponseField>
+
+<ResponseField name="notApplicableReason" type="string">
+  When present, the action is unavailable and this string explains why.
+</ResponseField>
+
+<ResponseField name="kind" type="string">
+  Hierarchical dot-separated kind, for example `"refactor.extract.function"`.
+</ResponseField>
+
+<ResponseField name="isInteractive" type="boolean">
+  When `true`, the client must collect extra arguments and pass them as `interactiveRefactorArguments`.
+</ResponseField>
+
+## `RefactorEditInfo`
+
+```typescript
+interface RefactorEditInfo {
+    edits: FileTextChanges[];
+    renameFilename?: string;
+    renameLocation?: number;
+    commands?: CodeActionCommand[];
+    notApplicableReason?: string;
+}
+```
+
+<ResponseField name="edits" type="FileTextChanges[]">
+  The file changes to apply.
+</ResponseField>
+
+<ResponseField name="renameFilename" type="string">
+  If present, prompt the user to rename the symbol at `renameLocation` in this file after applying the edits.
+</ResponseField>
+
+<ResponseField name="renameLocation" type="number">
+  Character offset at which rename should be initiated.
+</ResponseField>
+
+<ResponseField name="notApplicableReason" type="string">
+  When the refactor cannot be applied, this explains why.
+</ResponseField>
+
+## `FileTextChanges` and `TextChange`
+
+```typescript
+interface FileTextChanges {
+    fileName: string;
+    textChanges: readonly TextChange[];
+    isNewFile?: boolean;
+}
+
+interface TextChange {
+    span: TextSpan;   // The range to replace
+    newText: string;  // The replacement text
+}
+```
+
+<Note>
+  Apply `textChanges` in reverse order (highest offset first) to avoid invalidating earlier offsets.
+</Note>
+
+## Built-in refactors
+
+These are the refactor names and representative action names registered in the TypeScript compiler.
+
+<AccordionGroup>
+
+<Accordion title="Extract Symbol">
+
+**Refactor name:** `"Extract Symbol"`
+
+Extracts selected code into a new function or constant.
+
+- Action `"function_scope_0"`, `"function_scope_1"`, … — extract into function at the Nth enclosing scope
+- Action `"constant_scope_0"`, `"constant_scope_1"`, … — extract into constant at the Nth enclosing scope
+
+</Accordion>
+
+<Accordion title="Extract type">
+
+**Refactor name:** `"Extract type"`
+
+Extracts an inline type annotation into a named type alias.
+
+</Accordion>
+
+<Accordion title="Infer function return type">
+
+**Refactor name:** `"Infer function return type"`
+
+Adds an explicit return type annotation inferred from the function body.
+
+</Accordion>
+
+<Accordion title="Add or remove braces in an arrow function">
+
+**Refactor name:** `"Add or remove braces in an arrow function"`
+
+- Adds a block body to a concise-body arrow function
+- Removes the block body and converts to an expression body
+
+</Accordion>
+
+<Accordion title="Convert arrow function or function expression">
+
+**Refactor name:** `"Convert arrow function or function expression"`
+
+Toggles between arrow function and regular function expression.
+
+</Accordion>
+
+<Accordion title="Convert export">
+
+**Refactor name:** `"Convert export"`
+
+Converts between a default export and a named export.
+
+</Accordion>
+
+<Accordion title="Move to a new file">
+
+**Refactor name:** `"Move to a new file"`
+
+Moves selected declarations into a new file and updates imports.
+
+</Accordion>
+
+<Accordion title="Move to file">
+
+**Refactor name:** `"Move to file"` (interactive)
+
+Moves selected declarations to an existing file chosen by the user. Pass the target path in `interactiveRefactorArguments.targetFile`.
+
+</Accordion>
+
+<Accordion title="Convert to optional chain expression">
+
+**Refactor name:** `"Convert to optional chain expression"`
+
+Rewrites `a && a.b && a.b.c` to `a?.b?.c`.
+
+</Accordion>
+
+<Accordion title="Convert to template string">
+
+**Refactor name:** `"Convert to template string"`
+
+Converts a string concatenation to a template literal.
+
+</Accordion>
+
+<Accordion title="Inline variable">
+
+**Refactor name:** `"Inline variable"`
+
+Inlines a single-use variable at every reference site.
+
+</Accordion>
+
+</AccordionGroup>
+
+## Example: extract a constant
+
+```typescript
+import * as ts from 'typescript';
+
+// File content:
+// function area(r: number) {
+//     return 3.14159 * r * r;
+// }
+
+const fileName = '/project/index.ts';
+
+// Select "3.14159" (character offsets 35–42)
+const range: ts.TextRange = { pos: 35, end: 42 };
+
+const refactors = languageService.getApplicableRefactors(
+    fileName,
+    range,
+    undefined,
+    'invoked',
+);
+
+// Find the extract-constant action
+for (const info of refactors) {
+    for (const action of info.actions) {
+        if (action.kind?.startsWith('refactor.extract.constant')) {
+            console.log(`Found: ${info.name} / ${action.name} — ${action.description}`);
+
+            const editInfo = languageService.getEditsForRefactor(
+                fileName,
+                ts.getDefaultFormatCodeSettings('\n'),
+                range,
+                info.name,
+                action.name,
+                undefined,
+            );
+
+            if (editInfo) {
+                for (const fileChange of editInfo.edits) {
+                    console.log(`Changes in ${fileChange.fileName}:`);
+                    // Apply in reverse order
+                    const sorted = [...fileChange.textChanges].sort(
+                        (a, b) => b.span.start - a.span.start,
+                    );
+                    for (const change of sorted) {
+                        console.log(
+                            `  Replace [${change.span.start},${ts.textSpanEnd(change.span)}]`,
+                            `with: ${JSON.stringify(change.newText)}`,
+                        );
+                    }
+                }
+                if (editInfo.renameLocation !== undefined) {
+                    console.log(`Rename requested at offset ${editInfo.renameLocation}`);
+                }
+            }
+        }
+    }
+}
+```

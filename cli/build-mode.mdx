@@ -1,0 +1,250 @@
+---
+title: 'Build mode'
+description: 'Use tsc --build to compile a project and all of its project references in dependency order.'
+keywords: ['build mode', 'tsc --build', 'project references', 'composite', 'tsbuildinfo', 'incremental']
+---
+
+Build mode (`tsc --build` or `tsc -b`) compiles a TypeScript project together with all of its project references. TypeScript resolves the full dependency graph, builds each project in the correct order, and skips projects whose outputs are already up to date.
+
+```bash
+# Build the project described by tsconfig.json in the current directory
+tsc --build
+
+# Short form
+tsc -b
+
+# Build a specific config file
+tsc -b tsconfig.json
+
+# Build multiple projects at once
+tsc -b tsconfig.app.json tsconfig.tests.json
+
+# Build with verbose output
+tsc -b --verbose
+```
+
+## Requirements
+
+For a project to be usable as a project reference (i.e. referenced by another project), it must have `composite: true` in its `compilerOptions`:
+
+```json
+{
+  "compilerOptions": {
+    "composite": true,
+    "declaration": true,
+    "outDir": "./dist"
+  }
+}
+```
+
+`composite: true` implies `declaration: true` and `incremental: true`. It also enforces that all input files must be discoverable from `rootDir`, `files`, or `include`.
+
+## Referencing projects
+
+A project declares its dependencies using the `references` array in `tsconfig.json`:
+
+```json
+{
+  "compilerOptions": {
+    "outDir": "./dist"
+  },
+  "references": [
+    { "path": "../core" },
+    { "path": "../utils" }
+  ]
+}
+```
+
+When you run `tsc -b` on this project, TypeScript builds `../core` and `../utils` first (and their own dependencies recursively), then builds the current project.
+
+## How TypeScript determines what is out of date
+
+For each project in the build graph, TypeScript checks:
+
+1. Whether any output file is missing.
+2. Whether any input file (`.ts`, `.tsx`) is newer than its corresponding output.
+3. Whether any referenced project's `.d.ts` outputs have changed since the last build.
+4. Whether the compiler options stored in the `.tsbuildinfo` file have changed.
+5. Whether the TypeScript version has changed.
+
+If any condition is true, the project is rebuilt. Otherwise it is skipped.
+
+## .tsbuildinfo incremental cache
+
+Every `composite` project writes a `.tsbuildinfo` file alongside its outputs. This file records:
+
+- The list of source files and their checksums.
+- The compiler options used during the last build.
+- Per-file semantic diagnostics information for incremental rebuilds.
+
+You can customize the path with `tsBuildInfoFile` in `compilerOptions`:
+
+```json
+{
+  "compilerOptions": {
+    "composite": true,
+    "tsBuildInfoFile": "./dist/.tsbuildinfo"
+  }
+}
+```
+
+<Warning>
+Do not edit `.tsbuildinfo` files by hand. If the cache becomes corrupted, delete it or run `tsc -b --force` to rebuild from scratch.
+</Warning>
+
+## Build mode flags
+
+<ParamField path="--build" type="boolean" default="false">
+  Alias: `-b`. Enable build mode. When present, the remaining positional arguments are treated as paths to `tsconfig.json` files or directories that contain one.
+</ParamField>
+
+<ParamField path="--verbose" type="boolean" default="false">
+  Alias: `-v`. Print a message for every project in the build graph, including those that are skipped because they are up to date.
+
+  ```bash
+  tsc -b --verbose
+  ```
+
+  Example output:
+
+  ```
+  Projects in this build:
+      * packages/core/tsconfig.json
+      * packages/utils/tsconfig.json
+      * tsconfig.json
+
+  Project 'packages/core/tsconfig.json' is up to date because newest input 'packages/core/src/index.ts' is older than oldest output 'packages/core/dist/index.js'
+  Building project 'packages/utils/tsconfig.json'...
+  Building project 'tsconfig.json'...
+  ```
+</ParamField>
+
+<ParamField path="--dry" type="boolean" default="false">
+  Alias: `-d`. Show which projects would be built or deleted (when combined with `--clean`) without actually performing any work.
+
+  ```bash
+  tsc -b --dry
+  tsc -b --clean --dry
+  ```
+</ParamField>
+
+<ParamField path="--force" type="boolean" default="false">
+  Alias: `-f`. Rebuild every project in the dependency graph unconditionally, ignoring timestamps and `.tsbuildinfo` cache files.
+
+  ```bash
+  tsc -b --force
+  ```
+</ParamField>
+
+<ParamField path="--clean" type="boolean" default="false">
+  Delete all outputs produced by the projects in the build graph. Combine with `--dry` to preview what would be deleted.
+
+  ```bash
+  tsc -b --clean
+  ```
+</ParamField>
+
+<ParamField path="--stopBuildOnErrors" type="boolean" default="false">
+  Stop building downstream projects as soon as an upstream project fails. By default, TypeScript continues building independent projects even when one project has errors.
+</ParamField>
+
+## Building multiple projects
+
+You can pass several config files to a single `tsc -b` invocation. TypeScript merges their dependency graphs and builds everything in topological order:
+
+```bash
+tsc -b packages/core packages/utils packages/app
+```
+
+You can also create a solution-level `tsconfig.json` that has no source files of its own and only lists references:
+
+```json
+{
+  "files": [],
+  "references": [
+    { "path": "packages/core" },
+    { "path": "packages/utils" },
+    { "path": "packages/app" }
+  ]
+}
+```
+
+Then you only need to run `tsc -b` from the repository root.
+
+## Combining build mode with watch
+
+You can combine `--build` and `--watch` to get incremental project-references builds on every file save:
+
+```bash
+tsc -b --watch
+tsc -b -w
+```
+
+This is equivalent to running `tsc --watch` but with full project-reference awareness: TypeScript rebuilds only the projects affected by a change.
+
+## Integration with npm scripts and CI
+
+<Tabs>
+  <Tab title="npm scripts">
+    ```json
+    {
+      "scripts": {
+        "build": "tsc -b",
+        "build:clean": "tsc -b --clean && tsc -b",
+        "build:force": "tsc -b --force",
+        "typecheck": "tsc -b --noEmit",
+        "dev": "tsc -b --watch"
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="GitHub Actions">
+    ```yaml
+    - name: Type-check
+      run: npx tsc -b --noEmit
+
+    - name: Build
+      run: npx tsc -b
+    ```
+  </Tab>
+  <Tab title="Makefile">
+    ```makefile
+    .PHONY: build clean
+
+    build:
+    	npx tsc -b
+
+    clean:
+    	npx tsc -b --clean
+    ```
+  </Tab>
+</Tabs>
+
+## Typical monorepo structure
+
+```
+repo/
+├── tsconfig.json          # solution file — only "references", no "files"
+├── packages/
+│   ├── core/
+│   │   ├── src/
+│   │   ├── dist/
+│   │   ├── dist/.tsbuildinfo
+│   │   └── tsconfig.json  # composite: true
+│   ├── utils/
+│   │   ├── src/
+│   │   ├── dist/
+│   │   ├── dist/.tsbuildinfo
+│   │   └── tsconfig.json  # composite: true, references: [core]
+│   └── app/
+│       ├── src/
+│       ├── dist/
+│       ├── dist/.tsbuildinfo
+│       └── tsconfig.json  # composite: true, references: [core, utils]
+```
+
+Running `tsc -b` from the repo root builds `core` first, then `utils` (which depends on `core`), then `app` (which depends on both).
+
+<Tip>
+Commit `.tsbuildinfo` files to source control if you want CI to benefit from incremental builds. The cache is safe to commit because TypeScript validates its contents on every run.
+</Tip>

@@ -1,0 +1,201 @@
+---
+title: 'Go to definition'
+description: 'Navigate to the declaration of a symbol using getDefinitionAtPosition, getTypeDefinitionAtPosition, and getImplementationAtPosition.'
+keywords: ['go to definition', 'getDefinitionAtPosition', 'DefinitionInfo', 'TextSpan', 'navigation']
+---
+
+The go-to-definition APIs return the source locations for the declaration of whichever symbol the cursor is on. There are four variants covering value declarations, type declarations, interface implementations, and a combined call that also returns the bound span.
+
+## `getDefinitionAtPosition`
+
+Returns the declaration locations for the symbol at the given position.
+
+```typescript
+languageService.getDefinitionAtPosition(
+    fileName: string,
+    position: number,
+): readonly DefinitionInfo[] | undefined
+```
+
+<ResponseField name="fileName" type="string" required>
+  Absolute path to the file containing the symbol.
+</ResponseField>
+
+<ResponseField name="position" type="number" required>
+  Zero-based character offset of the symbol.
+</ResponseField>
+
+Returns `undefined` when there is no symbol at the position, or an empty array when the symbol has no declaration (for example, a primitive type keyword).
+
+## `getDefinitionAndBoundSpan`
+
+Combines `getDefinitionAtPosition` with the span of the source token that triggered the navigation. Editors can use `textSpan` to highlight the token that was clicked.
+
+```typescript
+languageService.getDefinitionAndBoundSpan(
+    fileName: string,
+    position: number,
+): DefinitionInfoAndBoundSpan | undefined
+```
+
+## `getTypeDefinitionAtPosition`
+
+Navigates to the type of the symbol rather than its value declaration. For a variable `x: MyType`, this returns the declaration of `MyType`.
+
+```typescript
+languageService.getTypeDefinitionAtPosition(
+    fileName: string,
+    position: number,
+): readonly DefinitionInfo[] | undefined
+```
+
+## `getImplementationAtPosition`
+
+For an interface method or an abstract method, returns the concrete implementation locations.
+
+```typescript
+languageService.getImplementationAtPosition(
+    fileName: string,
+    position: number,
+): readonly ImplementationLocation[] | undefined
+```
+
+## `DefinitionInfo`
+
+Extends `DocumentSpan` with additional fields describing the declaration.
+
+```typescript
+interface DefinitionInfo extends DocumentSpan {
+    kind: ScriptElementKind;
+    name: string;
+    containerKind: ScriptElementKind;
+    containerName: string;
+    unverified?: boolean;
+}
+```
+
+<ResponseField name="fileName" type="string">
+  Absolute path to the file containing the declaration. (Inherited from `DocumentSpan`.)
+</ResponseField>
+
+<ResponseField name="textSpan" type="TextSpan">
+  The span of the declaration name inside `fileName`. (Inherited from `DocumentSpan`.)
+</ResponseField>
+
+<ResponseField name="contextSpan" type="TextSpan">
+  The span of the full declaration, when wider context is useful (for example, the entire function signature). (Inherited from `DocumentSpan`.)
+</ResponseField>
+
+<ResponseField name="kind" type="ScriptElementKind">
+  The kind of the declared symbol: `"function"`, `"class"`, `"interface"`, `"var"`, `"const"`, etc.
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  The name of the declared symbol.
+</ResponseField>
+
+<ResponseField name="containerKind" type="ScriptElementKind">
+  The kind of the container — for example, `"module"` when the declaration is at the top of a file.
+</ResponseField>
+
+<ResponseField name="containerName" type="string">
+  The name of the container: the module name, class name, or an empty string for top-level declarations.
+</ResponseField>
+
+<ResponseField name="unverified" type="boolean">
+  When `true`, the result is a best-guess that may not be perfectly accurate. This can happen when navigating into `.d.ts` declaration files for symbols that originated in JavaScript.
+</ResponseField>
+
+## `TextSpan`
+
+```typescript
+interface TextSpan {
+    start: number;  // Zero-based character offset
+    length: number; // Length in characters
+}
+```
+
+Use `ts.textSpanEnd(span)` to compute the exclusive end position (`start + length`).
+
+## `DefinitionInfoAndBoundSpan`
+
+```typescript
+interface DefinitionInfoAndBoundSpan {
+    definitions?: readonly DefinitionInfo[];
+    textSpan: TextSpan;
+}
+```
+
+<ResponseField name="definitions" type="readonly DefinitionInfo[]">
+  The declaration locations, same as from `getDefinitionAtPosition`.
+</ResponseField>
+
+<ResponseField name="textSpan" type="TextSpan">
+  The span of the token at the requested position. Use this to highlight the clicked range in the editor.
+</ResponseField>
+
+## `ImplementationLocation`
+
+Extends `DocumentSpan` with display information.
+
+```typescript
+interface ImplementationLocation extends DocumentSpan {
+    kind: ScriptElementKind;
+    displayParts: SymbolDisplayPart[];
+}
+```
+
+<ResponseField name="kind" type="ScriptElementKind">
+  The kind of the implementing symbol.
+</ResponseField>
+
+<ResponseField name="displayParts" type="SymbolDisplayPart[]">
+  Structured display text for the implementation, suitable for a hover tooltip.
+</ResponseField>
+
+## Example: navigate to a symbol's declaration
+
+```typescript
+import * as ts from 'typescript';
+
+// File content:
+// function greet(name: string): string {
+//     return `Hello, ${name}`;
+// }
+// const msg = greet('world');
+
+const fileName = '/project/index.ts';
+const position = 55; // cursor on the call to `greet`
+
+const result = languageService.getDefinitionAndBoundSpan(fileName, position);
+
+if (result) {
+    console.log(
+        'Clicked token:',
+        `[${result.textSpan.start}, ${ts.textSpanEnd(result.textSpan)}]`,
+    );
+
+    for (const def of result.definitions ?? []) {
+        console.log(
+            `Definition: ${def.kind} "${def.name}" in ${def.fileName}`,
+            `at offset ${def.textSpan.start}`,
+        );
+    }
+}
+
+// Navigate to the type of a variable
+const typeResult = languageService.getTypeDefinitionAtPosition(fileName, 60);
+for (const def of typeResult ?? []) {
+    console.log(`Type declared in ${def.fileName} as ${def.kind} "${def.name}"`);
+}
+
+// Find implementations of an interface method
+const implResult = languageService.getImplementationAtPosition(fileName, 30);
+for (const impl of implResult ?? []) {
+    console.log(`Implemented at ${impl.fileName}:${impl.textSpan.start}`);
+}
+```
+
+<Note>
+  The result array can contain multiple entries when a symbol is declared in multiple locations, such as function overloads or interface merging.
+</Note>

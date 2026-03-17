@@ -1,0 +1,314 @@
+---
+title: Completions
+description: Get completion suggestions at a position in a TypeScript file using getCompletionsAtPosition and getCompletionEntryDetails.
+---
+
+The completions API returns the list of valid identifiers, keywords, and auto-import suggestions at a given cursor position. Pair it with `getCompletionEntryDetails` to fetch the documentation and code actions for a specific entry.
+
+## `getCompletionsAtPosition`
+
+```typescript
+languageService.getCompletionsAtPosition(
+    fileName: string,
+    position: number,
+    options: GetCompletionsAtPositionOptions | undefined,
+    formattingSettings?: FormatCodeSettings,
+): WithMetadata<CompletionInfo> | undefined
+```
+
+<ResponseField name="fileName" type="string" required>
+  Absolute path to the file.
+</ResponseField>
+
+<ResponseField name="position" type="number" required>
+  Zero-based character offset where completions are requested.
+</ResponseField>
+
+<ResponseField name="options" type="GetCompletionsAtPositionOptions | undefined" required>
+  Controls what triggers the request and what kinds of completions to include. Pass `undefined` for defaults.
+</ResponseField>
+
+<ResponseField name="formattingSettings" type="FormatCodeSettings">
+  Used when the language service needs to format inserted text (for example, in method snippet completions).
+</ResponseField>
+
+### `GetCompletionsAtPositionOptions`
+
+Extends `UserPreferences` with the following additional fields:
+
+```typescript
+interface GetCompletionsAtPositionOptions extends UserPreferences {
+    triggerCharacter?: CompletionsTriggerCharacter;
+    triggerKind?: CompletionTriggerKind;
+    includeSymbol?: boolean;
+}
+```
+
+<ResponseField name="triggerCharacter" type="CompletionsTriggerCharacter">
+  The character the user typed that triggered the request: `.`, `"`, `'`, `` ` ``, `/`, `@`, `<`, `#`, or a space.
+</ResponseField>
+
+<ResponseField name="triggerKind" type="CompletionTriggerKind">
+  `Invoked` (1) for explicit invocation, `TriggerCharacter` (2) when triggered by a character, `TriggerForIncompleteCompletions` (3) when refreshing an incomplete list.
+</ResponseField>
+
+<ResponseField name="includeSymbol" type="boolean">
+  When `true`, each `CompletionEntry` will include a `symbol` property. Default is `false`. Use with caution — `Symbol` objects hold references to the entire type checker.
+</ResponseField>
+
+## `CompletionInfo`
+
+```typescript
+interface CompletionInfo {
+    isGlobalCompletion: boolean;
+    isMemberCompletion: boolean;
+    isNewIdentifierLocation: boolean;
+    isIncomplete?: true;
+    optionalReplacementSpan?: TextSpan;
+    entries: CompletionEntry[];
+    defaultCommitCharacters?: string[];
+    flags?: CompletionInfoFlags;
+}
+```
+
+<ResponseField name="isGlobalCompletion" type="boolean">
+  `true` when the completion list comes from the top-level scope.
+</ResponseField>
+
+<ResponseField name="isMemberCompletion" type="boolean">
+  `true` when completing members of an object or type (after `.` or `[`).
+</ResponseField>
+
+<ResponseField name="isNewIdentifierLocation" type="boolean">
+  `true` when the cursor is in a position where a new identifier can be introduced.
+</ResponseField>
+
+<ResponseField name="isIncomplete" type="true | undefined">
+  When present and `true`, the list may be incomplete. The client should continue requesting completions on subsequent keystrokes using `TriggerForIncompleteCompletions`.
+</ResponseField>
+
+<ResponseField name="optionalReplacementSpan" type="TextSpan">
+  The span of text the editor may optionally replace when committing a completion. Individual entries can override this with their own `replacementSpan`.
+</ResponseField>
+
+<ResponseField name="entries" type="CompletionEntry[]">
+  The list of completion candidates.
+</ResponseField>
+
+<ResponseField name="defaultCommitCharacters" type="string[]">
+  Characters that, when typed, commit the selected entry.
+</ResponseField>
+
+## `CompletionEntry`
+
+```typescript
+interface CompletionEntry {
+    name: string;
+    kind: ScriptElementKind;
+    kindModifiers?: string;
+    sortText: string;
+    insertText?: string;
+    filterText?: string;
+    isSnippet?: true;
+    replacementSpan?: TextSpan;
+    hasAction?: true;
+    source?: string;
+    sourceDisplay?: SymbolDisplayPart[];
+    labelDetails?: CompletionEntryLabelDetails;
+    isRecommended?: true;
+    isFromUncheckedFile?: true;
+    isPackageJsonImport?: true;
+    isImportStatementCompletion?: true;
+    commitCharacters?: string[];
+    data?: CompletionEntryData;
+    symbol?: Symbol;
+}
+```
+
+<ResponseField name="name" type="string">
+  The identifier to display and filter by.
+</ResponseField>
+
+<ResponseField name="kind" type="ScriptElementKind">
+  The category of the entry. See [`ScriptElementKind`](#scriptelementkind) below.
+</ResponseField>
+
+<ResponseField name="kindModifiers" type="string">
+  Comma-separated modifiers such as `"public"`, `"static"`, `"deprecated"`, `"optional"`, or file extension markers like `".d.ts"`.
+</ResponseField>
+
+<ResponseField name="sortText" type="string">
+  Opaque string used to order completions. Lower values sort first.
+</ResponseField>
+
+<ResponseField name="insertText" type="string">
+  If present, insert this text instead of `name`. Used for bracketed completions such as `["property-with-dashes"]`.
+</ResponseField>
+
+<ResponseField name="isSnippet" type="true | undefined">
+  When `true`, `insertText` should be interpreted as a VS Code snippet with `$0`, `$1` placeholders.
+</ResponseField>
+
+<ResponseField name="replacementSpan" type="TextSpan">
+  If set, use this span to replace existing text when committing the entry.
+</ResponseField>
+
+<ResponseField name="hasAction" type="true | undefined">
+  When `true`, committing this entry may require additional code actions (for example, adding an import). Fetch them from `getCompletionEntryDetails`.
+</ResponseField>
+
+<ResponseField name="isRecommended" type="true | undefined">
+  When `true`, this is the single best-match entry for the current context.
+</ResponseField>
+
+<ResponseField name="data" type="CompletionEntryData">
+  Opaque payload to pass back to `getCompletionEntryDetails` for auto-import completions.
+</ResponseField>
+
+## `getCompletionEntryDetails`
+
+Fetches extended information — documentation, type display, and code actions — for a single completion entry.
+
+```typescript
+languageService.getCompletionEntryDetails(
+    fileName: string,
+    position: number,
+    entryName: string,
+    formatOptions: FormatCodeOptions | FormatCodeSettings | undefined,
+    source: string | undefined,
+    preferences: UserPreferences | undefined,
+    data: CompletionEntryData | undefined,
+): CompletionEntryDetails | undefined
+```
+
+Pass the `source` and `data` fields directly from the `CompletionEntry` you want details for.
+
+## `CompletionEntryDetails`
+
+```typescript
+interface CompletionEntryDetails {
+    name: string;
+    kind: ScriptElementKind;
+    kindModifiers: string;
+    displayParts: SymbolDisplayPart[];
+    documentation?: SymbolDisplayPart[];
+    tags?: JSDocTagInfo[];
+    codeActions?: CodeAction[];
+    sourceDisplay?: SymbolDisplayPart[];
+}
+```
+
+<ResponseField name="displayParts" type="SymbolDisplayPart[]">
+  Structured type signature for the symbol, suitable for rendering with syntax highlighting.
+</ResponseField>
+
+<ResponseField name="documentation" type="SymbolDisplayPart[]">
+  The JSDoc comment for the symbol.
+</ResponseField>
+
+<ResponseField name="tags" type="JSDocTagInfo[]">
+  Parsed JSDoc tags such as `@param` and `@returns`.
+</ResponseField>
+
+<ResponseField name="codeActions" type="CodeAction[]">
+  Code actions to apply when the completion is committed, typically adding an import statement.
+</ResponseField>
+
+## `ScriptElementKind` values
+
+Relevant values for completions:
+
+| Value | String | Description |
+|---|---|---|
+| `keyword` | `"keyword"` | Language keyword |
+| `classElement` | `"class"` | Class declaration |
+| `interfaceElement` | `"interface"` | Interface declaration |
+| `typeElement` | `"type"` | Type alias |
+| `enumElement` | `"enum"` | Enum |
+| `enumMemberElement` | `"enum member"` | Enum member |
+| `variableElement` | `"var"` | Module-level variable |
+| `constElement` | `"const"` | `const` declaration |
+| `letElement` | `"let"` | `let` declaration |
+| `functionElement` | `"function"` | Function declaration |
+| `memberFunctionElement` | `"method"` | Class/interface method |
+| `memberVariableElement` | `"property"` | Class/interface property |
+| `constructorImplementationElement` | `"constructor"` | Constructor |
+| `parameterElement` | `"parameter"` | Function parameter |
+| `typeParameterElement` | `"type parameter"` | Generic type parameter |
+| `moduleElement` | `"module"` | Module or namespace |
+| `externalModuleName` | `"external module name"` | Import/require path |
+| `string` | `"string"` | String literal |
+| `directory` | `"directory"` | File-system directory (path completions) |
+
+## `UserPreferences` for completions
+
+Relevant fields from `UserPreferences` that affect completion behaviour:
+
+```typescript
+interface UserPreferences {
+    includeCompletionsForModuleExports?: boolean;     // Auto-import from node_modules
+    includeCompletionsForImportStatements?: boolean;  // Complete module specifiers
+    includeCompletionsWithSnippetText?: boolean;      // Enable snippet completions
+    includeAutomaticOptionalChainCompletions?: boolean;
+    includeCompletionsWithInsertText?: boolean;
+    importModuleSpecifierPreference?: 'shortest' | 'project-relative' | 'relative' | 'non-relative';
+    importModuleSpecifierEnding?: 'auto' | 'minimal' | 'index' | 'js';
+    providePrefixAndSuffixTextForRename?: boolean;
+    includePackageJsonAutoImports?: 'auto' | 'on' | 'off';
+    allowIncompleteCompletions?: boolean;
+    displayPartsForJSDoc?: boolean;
+}
+```
+
+## Example: get completions at a position
+
+```typescript
+import * as ts from 'typescript';
+
+// Assume `languageService` and file '/project/index.ts' are set up
+const fileName = '/project/index.ts';
+
+// File content: 'const arr = [1, 2, 3];\narr.'
+const position = 25; // cursor after the dot
+
+const completions = languageService.getCompletionsAtPosition(
+    fileName,
+    position,
+    {
+        triggerCharacter: '.',
+        triggerKind: ts.CompletionTriggerKind.TriggerCharacter,
+        includeCompletionsForModuleExports: false,
+    },
+);
+
+if (completions) {
+    console.log('Member completion:', completions.isMemberCompletion); // true
+    for (const entry of completions.entries.slice(0, 5)) {
+        console.log(`${entry.kind}\t${entry.name}`);
+    }
+}
+
+// Get details for the 'map' entry
+const mapEntry = completions?.entries.find((e) => e.name === 'map');
+if (mapEntry) {
+    const details = languageService.getCompletionEntryDetails(
+        fileName,
+        position,
+        mapEntry.name,
+        undefined,   // formatOptions
+        mapEntry.source,
+        undefined,   // preferences
+        mapEntry.data,
+    );
+    if (details) {
+        const sig = ts.displayPartsToString(details.displayParts);
+        const docs = ts.displayPartsToString(details.documentation ?? []);
+        console.log('Signature:', sig);
+        console.log('Docs:', docs);
+    }
+}
+```
+
+<Note>
+  Always pass the `source` and `data` fields from the original `CompletionEntry` back to `getCompletionEntryDetails`. These are required to look up auto-import completions correctly.
+</Note>

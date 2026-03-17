@@ -1,80 +1,273 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Go from zero to a working TypeScript project in minutes — write a typed file, compile it with tsc, and run the output.
+keywords: ['typescript', 'quickstart', 'tsc', 'ts-node', 'compile', 'tsconfig']
 ---
 
-## Get started in three steps
+This guide walks you through installing TypeScript, writing a typed source file, compiling it, and running the output. The entire process takes under five minutes.
 
-Get your documentation site running locally and make your first customization.
+<Steps>
 
-### Step 1: Set up your local environment
+<Step title="Install TypeScript">
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+Install TypeScript as a development dependency in your project:
 
-### Step 2: Deploy your changes
+<CodeGroup>
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+```bash npm
+mkdir hello-typescript && cd hello-typescript
+npm init -y
+npm install --save-dev typescript
+```
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+```bash yarn
+mkdir hello-typescript && cd hello-typescript
+yarn init -y
+yarn add --dev typescript
+```
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+```bash pnpm
+mkdir hello-typescript && cd hello-typescript
+pnpm init
+pnpm add --save-dev typescript
+```
 
-### Step 3: Go live
+</CodeGroup>
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+Verify the installation:
 
-## Next steps
+```bash
+npx tsc --version
+# Version 6.0.0
+```
 
-Now that you have your docs running, explore these key features:
+</Step>
 
-<CardGroup cols={2}>
+<Step title="Create a tsconfig.json">
 
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
+Generate a `tsconfig.json` at the root of your project:
 
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
+```bash
+npx tsc --init
+```
 
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
+Replace the generated file with this configuration tailored for a Node.js project:
 
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true
+  },
+  "include": ["src"]
+}
+```
 
-</CardGroup>
+What each option does:
+
+- **`target: "es2022"`** — Emit JavaScript targeting ES2022, which Node.js 18+ supports natively.
+- **`module: "commonjs"`** — Use `require`/`module.exports` for the emitted modules.
+- **`outDir: "./dist"`** — Write compiled `.js` files into a `dist/` directory.
+- **`rootDir: "./src"`** — TypeScript source files live in `src/`.
+- **`strict: true`** — Enable the full suite of strict checks: `noImplicitAny`, `strictNullChecks`, `strictFunctionTypes`, `strictBindCallApply`, `strictPropertyInitialization`, `noImplicitThis`, and `useUnknownInCatchVariables`.
+- **`esModuleInterop: true`** — Allow default imports from CommonJS modules.
+
+</Step>
+
+<Step title="Write a TypeScript source file">
+
+Create the source directory and your first TypeScript file:
+
+```bash
+mkdir src
+```
+
+```typescript twoslash src/index.ts
+interface User {
+  id: number;
+  name: string;
+  email: string;
+  role: "admin" | "editor" | "viewer";
+}
+
+function formatUser(user: User): string {
+  return `[${user.role.toUpperCase()}] ${user.name} <${user.email}>`;
+}
+
+function getAdmins(users: User[]): User[] {
+  return users.filter((u) => u.role === "admin");
+}
+
+const users: User[] = [
+  { id: 1, name: "Alice", email: "alice@example.com", role: "admin" },
+  { id: 2, name: "Bob", email: "bob@example.com", role: "editor" },
+  { id: 3, name: "Carol", email: "carol@example.com", role: "viewer" },
+];
+
+const admins = getAdmins(users);
+console.log(`Admins (${admins.length}):`);
+admins.forEach((u) => console.log(" ", formatUser(u)));
+```
+
+This example demonstrates several TypeScript features that plain JavaScript lacks:
+
+- An `interface` that describes the exact shape of a user object
+- A union type (`"admin" | "editor" | "viewer"`) that restricts `role` to known string values
+- Explicit return types on functions so the compiler validates your implementation
+- Type-safe array operations — `filter` returns `User[]`, not `any[]`
+
+Try introducing a type error to see the compiler catch it:
+
+```typescript twoslash
+// @errors: 2322
+interface User {
+  id: number;
+  name: string;
+  email: string;
+  role: "admin" | "editor" | "viewer";
+}
+
+const user: User = {
+  id: 1,
+  name: "Alice",
+  email: "alice@example.com",
+  role: "superuser", // Error: Type '"superuser"' is not assignable to type '"admin" | "editor" | "viewer"'
+};
+```
+
+</Step>
+
+<Step title="Compile with tsc">
+
+Run the TypeScript compiler from your project root:
+
+```bash
+npx tsc
+```
+
+If there are no errors, the compiler exits silently and writes the compiled output to `dist/`:
+
+```
+hello-typescript/
+├── dist/
+│   └── index.js       ← compiled output
+├── src/
+│   └── index.ts
+├── package.json
+└── tsconfig.json
+```
+
+Inspect the emitted JavaScript to see what TypeScript produced:
+
+```javascript dist/index.js
+"use strict";
+function formatUser(user) {
+    return `[${user.role.toUpperCase()}] ${user.name} <${user.email}>`;
+}
+function getAdmins(users) {
+    return users.filter((u) => u.role === "admin");
+}
+const users = [
+    { id: 1, name: "Alice", email: "alice@example.com", role: "admin" },
+    { id: 2, name: "Bob", email: "bob@example.com", role: "editor" },
+    { id: 3, name: "Carol", email: "carol@example.com", role: "viewer" },
+];
+const admins = getAdmins(users);
+console.log(`Admins (${admins.length}):`);
+admins.forEach((u) => console.log(" ", formatUser(u)));
+```
+
+All type annotations are erased — the output is plain JavaScript with no runtime dependency on TypeScript.
+
+<Tip>
+Pass `--watch` (or `-w`) to recompile automatically whenever source files change:
+
+```bash
+npx tsc --watch
+```
+</Tip>
+
+</Step>
+
+<Step title="Run the compiled output">
+
+Run the emitted JavaScript with Node.js:
+
+```bash
+node dist/index.js
+```
+
+You should see:
+
+```
+Admins (1):
+  [ADMIN] Alice <alice@example.com>
+```
+
+</Step>
+
+<Step title="Run TypeScript directly with ts-node (optional)">
+
+For development, `ts-node` lets you run TypeScript files without a separate compile step:
+
+<CodeGroup>
+
+```bash npm
+npm install --save-dev ts-node
+```
+
+```bash yarn
+yarn add --dev ts-node
+```
+
+```bash pnpm
+pnpm add --save-dev ts-node
+```
+
+</CodeGroup>
+
+Run your file directly:
+
+```bash
+npx ts-node src/index.ts
+```
+
+`ts-node` compiles TypeScript in memory and executes it immediately — no `dist/` directory required.
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+`ts-node` is useful for scripts and development workflows. For production, always pre-compile with `tsc` and ship the emitted JavaScript.
 </Note>
+
+For ESM projects or for faster startup, consider `tsx` as an alternative:
+
+```bash
+npx tsx src/index.ts
+```
+
+</Step>
+
+</Steps>
+
+## What's next
+
+<CardGroup cols={2}>
+  <Card title="Core concepts" icon="book" href="/concepts/types-and-interfaces">
+    Learn about types, interfaces, unions, generics, and the rest of the type system.
+  </Card>
+  <Card title="tsconfig.json reference" icon="gear" href="/configuration/tsconfig">
+    Explore all compiler options and how to configure your project for different targets.
+  </Card>
+  <Card title="Migrating from JavaScript" icon="arrow-right-arrow-left" href="/guides/migrating-from-javascript">
+    Adopt TypeScript incrementally in an existing JavaScript project.
+  </Card>
+  <Card title="tsc CLI reference" icon="terminal" href="/cli/tsc">
+    Full reference for `tsc` flags, including watch mode, build mode, and project references.
+  </Card>
+</CardGroup>

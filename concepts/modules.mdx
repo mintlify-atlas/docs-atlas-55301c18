@@ -1,0 +1,323 @@
+---
+title: Modules
+description: Organize TypeScript code with ES modules and CommonJS. Learn import and export syntax, module resolution strategies, dynamic imports, ambient modules, and module augmentation.
+keywords: ['typescript', 'modules', 'ES modules', 'CommonJS', 'import', 'export', 'module resolution', 'dynamic import', 'ambient modules']
+---
+
+TypeScript uses the same module system as modern JavaScript. Any file with a top-level `import` or `export` is a **module**. Files without either are **scripts** that share the global scope.
+
+## ES modules vs. CommonJS
+
+TypeScript supports both module formats. The module format you emit depends on the `module` compiler option:
+
+| `module` setting | Output format | Use when |
+|-----------------|--------------|----------|
+| `ESNext` / `ES2022` | ES modules (`import`/`export`) | Modern bundlers, Deno, Bun |
+| `NodeNext` / `Node16` | ES modules or CJS depending on `package.json` `"type"` | Node.js with package.json control |
+| `CommonJS` | `require`/`module.exports` | Legacy Node.js |
+| `Preserve` | Keeps the format as-written | Bundlers that handle transformation |
+
+<Tip>
+For new projects targeting Node.js 18+, use `"module": "NodeNext"` and `"moduleResolution": "NodeNext"`. For browser apps with a bundler, use `"module": "ESNext"` and `"moduleResolution": "Bundler"`.
+</Tip>
+
+## Named exports
+
+Named exports let a module expose multiple values under explicit names:
+
+```typescript twoslash
+// math.ts
+export function add(a: number, b: number): number {
+  return a + b;
+}
+
+export function subtract(a: number, b: number): number {
+  return a - b;
+}
+
+export const PI = 3.14159;
+
+export type Vector2D = { x: number; y: number };
+```
+
+Import named exports using destructuring:
+
+```typescript twoslash
+// @filename: math.ts
+export function add(a: number, b: number): number { return a + b; }
+export const PI = 3.14159;
+export type Vector2D = { x: number; y: number };
+// @filename: app.ts
+import { add, PI, type Vector2D } from "./math";
+
+const result = add(1, 2); // 3
+console.log(PI);          // 3.14159
+```
+
+Use `type` in import statements to import type-only exports (erased completely at runtime):
+
+```typescript twoslash
+// @filename: math.ts
+export type Vector2D = { x: number; y: number };
+// @filename: app.ts
+import type { Vector2D } from "./math";
+// This import is erased at runtime — Vector2D is only used as a type
+```
+
+## Default exports
+
+A module can have one default export:
+
+```typescript twoslash
+// logger.ts
+export default class Logger {
+  log(message: string): void {
+    console.log(`[LOG] ${message}`);
+  }
+
+  error(message: string): void {
+    console.error(`[ERROR] ${message}`);
+  }
+}
+```
+
+Import a default export without braces:
+
+```typescript twoslash
+// @filename: logger.ts
+export default class Logger {
+  log(message: string): void { console.log(message); }
+}
+// @filename: app.ts
+import Logger from "./logger";
+
+const log = new Logger();
+log.log("Server started");
+```
+
+You can name a default import whatever you like — the name is local to the importing file.
+
+<Note>
+Many modern style guides discourage default exports because they make refactoring harder and auto-import less predictable. Named exports are generally easier to work with in large codebases.
+</Note>
+
+## Namespace imports
+
+Import everything a module exports under a single namespace object:
+
+```typescript twoslash
+// @filename: math.ts
+export function add(a: number, b: number): number { return a + b; }
+export const PI = 3.14159;
+// @filename: app.ts
+import * as Math from "./math";
+
+console.log(Math.PI);       // 3.14159
+console.log(Math.add(2, 3)); // 5
+```
+
+## Re-exports
+
+Re-export values from another module to create a public API surface:
+
+```typescript twoslash
+// @filename: utils/string.ts
+export function capitalize(s: string): string { return s[0].toUpperCase() + s.slice(1); }
+// @filename: utils/number.ts
+export function clamp(n: number, min: number, max: number): number { return Math.min(Math.max(n, min), max); }
+// @filename: utils/index.ts
+// Re-export from sub-modules — consumers import from "./utils" instead of sub-paths
+export { capitalize } from "./utils/string";
+export { clamp } from "./utils/number";
+
+// Re-export everything
+export * from "./utils/string";
+export * from "./utils/number";
+
+// Re-export with a rename
+export { capitalize as toTitleCase } from "./utils/string";
+```
+
+## Dynamic imports
+
+Dynamic imports (`import()`) load a module lazily at runtime and return a `Promise`:
+
+```typescript twoslash
+async function loadHeavyModule() {
+  // Module is loaded only when this function is called
+  const { processData } = await import("./heavy-processor");
+  return processData([1, 2, 3]);
+}
+
+// Conditional loading
+async function initializeApp(env: string) {
+  if (env === "development") {
+    const { setup } = await import("./dev-tools");
+    setup();
+  }
+}
+```
+
+Dynamic imports are useful for:
+- Code splitting in bundlers (Webpack, Vite, Rollup)
+- Loading polyfills conditionally
+- Lazy-loading large dependencies
+
+## Module resolution
+
+Module resolution is the algorithm TypeScript uses to find a module given an import path. The strategy is controlled by `moduleResolution` in `tsconfig.json`.
+
+### `Bundler` resolution
+
+Use this when your code is processed by a bundler (Vite, Webpack, esbuild, Rollup). It mirrors how modern bundlers resolve modules:
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler"
+  }
+}
+```
+
+- Resolves bare specifiers from `node_modules`
+- Does not require file extensions on relative imports
+- Respects `package.json` `exports` and `imports` fields
+- Does not enforce `.mjs`/`.cjs` extension rules
+
+### `NodeNext` / `Node16` resolution
+
+Use this for Node.js projects without a bundler:
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext"
+  }
+}
+```
+
+- Requires file extensions on relative imports in ESM files (`.js`, not `.ts` — TypeScript maps `.js` to the `.ts` source)
+- Respects `package.json` `exports` field
+- File type (ESM vs. CJS) is determined by `package.json` `"type"` field
+
+```typescript twoslash
+// In NodeNext mode, relative imports need the .js extension (which resolves to .ts source)
+// import { add } from "./math";    // Error in ESM mode
+// import { add } from "./math.js"; // Correct
+```
+
+### `Node10` / Classic` resolution
+
+Legacy modes retained for backward compatibility. Avoid for new projects.
+
+<Warning>
+`Classic` and `Node10` (`NodeJs`) module resolution are deprecated. They lack support for `package.json` `exports` fields and modern Node.js resolution semantics. Migrate to `NodeNext` or `Bundler`.
+</Warning>
+
+## Ambient modules
+
+Ambient modules let you declare types for modules that have no TypeScript source — for example, npm packages without type definitions, static asset imports, or virtual modules:
+
+```typescript twoslash
+// types/global.d.ts
+
+// Declare a module that has no types on npm
+declare module "some-legacy-package" {
+  export function doSomething(value: string): void;
+  export const version: string;
+}
+
+// Declare types for non-JS assets (e.g., CSS, images)
+declare module "*.svg" {
+  const content: string;
+  export default content;
+}
+
+declare module "*.css" {
+  const styles: Record<string, string>;
+  export default styles;
+}
+
+declare module "*.png" {
+  const url: string;
+  export default url;
+}
+```
+
+With these declarations in place, you can import the modules and get proper types:
+
+```typescript twoslash
+// After the ambient declarations above are in scope:
+// import logo from "./logo.svg";     // logo: string
+// import styles from "./app.css";    // styles: Record<string, string>
+```
+
+## Module augmentation
+
+Module augmentation lets you add new exports to an existing module — for example, to extend a library's types:
+
+```typescript twoslash
+// Augment the Express Request type to add a user property
+import "express";
+
+declare module "express" {
+  interface Request {
+    user?: {
+      id: number;
+      name: string;
+      role: string;
+    };
+  }
+}
+
+// After augmentation, req.user is typed everywhere
+// import { Request } from "express";
+// req.user?.name; // string | undefined
+```
+
+<Note>
+Module augmentation requires that you already `import` (or `export`) something from the module — otherwise the file is treated as a script and the `declare module` creates a new ambient module instead of augmenting an existing one.
+</Note>
+
+### Global augmentation
+
+To add properties to the global scope:
+
+```typescript twoslash
+// Augment the global Window interface
+export {}; // Make this a module
+
+declare global {
+  interface Window {
+    analytics: {
+      track(event: string, properties?: Record<string, unknown>): void;
+    };
+  }
+
+  function myGlobalHelper(s: string): string;
+}
+```
+
+## Barrel files and tree-shaking
+
+A barrel file re-exports from many sub-modules to give consumers a single import path. This is convenient but can affect tree-shaking:
+
+```typescript twoslash
+// @filename: components/Button.tsx
+export function Button() { return null; }
+// @filename: components/Input.tsx
+export function Input() { return null; }
+// @filename: components/Modal.tsx
+export function Modal() { return null; }
+// @filename: components/index.ts
+// Barrel file — consumers import from "./components"
+export { Button } from "./components/Button";
+export { Input } from "./components/Input";
+export { Modal } from "./components/Modal";
+```
+
+<Tip>
+Keep barrel files in sync with the actual exports. Unused re-exports in a barrel do not affect bundle size when your bundler supports tree-shaking with ESM, but they do slow down TypeScript's module resolution in very large projects. Consider using deep imports for performance-sensitive paths.
+</Tip>

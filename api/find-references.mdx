@@ -1,0 +1,208 @@
+---
+title: 'Find references'
+description: 'Find all usages of a symbol across a TypeScript project using findReferences and getReferencesAtPosition.'
+keywords: ['find references', 'findReferences', 'ReferencedSymbol', 'ReferenceEntry', 'usages']
+---
+
+The find-references API locates every place in the project that refers to a particular symbol. Use `findReferences` when you need rich grouping by definition, or `getReferencesAtPosition` for a flat list of spans.
+
+## `findReferences`
+
+Returns references grouped by their defining symbol. Each group contains one definition and all the places that reference it.
+
+```typescript
+languageService.findReferences(
+    fileName: string,
+    position: number,
+): ReferencedSymbol[] | undefined
+```
+
+<ResponseField name="fileName" type="string" required>
+  Absolute path to the file containing the symbol to search for.
+</ResponseField>
+
+<ResponseField name="position" type="number" required>
+  Zero-based character offset of the symbol.
+</ResponseField>
+
+Returns `undefined` when there is no symbol at the given position.
+
+## `getReferencesAtPosition`
+
+Returns a flat list of all reference spans without grouping. Each `ReferenceEntry` includes write-access and definition flags.
+
+```typescript
+languageService.getReferencesAtPosition(
+    fileName: string,
+    position: number,
+): ReferenceEntry[] | undefined
+```
+
+## `getFileReferences`
+
+Returns all import and reference-directive spans that reference a specific file.
+
+```typescript
+languageService.getFileReferences(
+    fileName: string,
+): ReferenceEntry[]
+```
+
+## `ReferencedSymbol`
+
+A symbol with all its reference locations.
+
+```typescript
+interface ReferencedSymbol {
+    definition: ReferencedSymbolDefinitionInfo;
+    references: ReferencedSymbolEntry[];
+}
+```
+
+<ResponseField name="definition" type="ReferencedSymbolDefinitionInfo">
+  Information about the declaring symbol. See below.
+</ResponseField>
+
+<ResponseField name="references" type="ReferencedSymbolEntry[]">
+  All locations where the symbol is used. Each entry extends `ReferenceEntry` with an optional `isDefinition` flag.
+</ResponseField>
+
+## `ReferencedSymbolDefinitionInfo`
+
+Extends `DefinitionInfo` with structured display text.
+
+```typescript
+interface ReferencedSymbolDefinitionInfo extends DefinitionInfo {
+    displayParts: SymbolDisplayPart[];
+}
+```
+
+<ResponseField name="fileName" type="string">
+  File containing the declaration. (From `DocumentSpan`.)
+</ResponseField>
+
+<ResponseField name="textSpan" type="TextSpan">
+  Span of the declaration name. (From `DocumentSpan`.)
+</ResponseField>
+
+<ResponseField name="kind" type="ScriptElementKind">
+  Kind of the declared symbol: `"function"`, `"class"`, etc. (From `DefinitionInfo`.)
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Name of the declared symbol. (From `DefinitionInfo`.)
+</ResponseField>
+
+<ResponseField name="containerName" type="string">
+  Name of the containing module, class, or namespace. (From `DefinitionInfo`.)
+</ResponseField>
+
+<ResponseField name="displayParts" type="SymbolDisplayPart[]">
+  Structured display text for the symbol, useful for showing a hover in a reference panel.
+</ResponseField>
+
+## `ReferenceEntry`
+
+A single reference location. Extends `DocumentSpan`.
+
+```typescript
+interface ReferenceEntry extends DocumentSpan {
+    isWriteAccess: boolean;
+    isInString?: true;
+}
+```
+
+<ResponseField name="fileName" type="string">
+  File containing the reference. (From `DocumentSpan`.)
+</ResponseField>
+
+<ResponseField name="textSpan" type="TextSpan">
+  Span of the reference token. (From `DocumentSpan`.)
+</ResponseField>
+
+<ResponseField name="originalFileName" type="string">
+  If the span was remapped through a `.d.ts.map` source map, the original source file. (From `DocumentSpan`.)
+</ResponseField>
+
+<ResponseField name="isWriteAccess" type="boolean">
+  `true` when the reference is an assignment or initialiser (a write), not a read.
+</ResponseField>
+
+<ResponseField name="isInString" type="true | undefined">
+  `true` when the reference appears inside a string literal rather than as a regular identifier.
+</ResponseField>
+
+## `ReferencedSymbolEntry`
+
+Extends `ReferenceEntry` with one additional field.
+
+```typescript
+interface ReferencedSymbolEntry extends ReferenceEntry {
+    isDefinition?: boolean;
+}
+```
+
+<ResponseField name="isDefinition" type="boolean">
+  `true` when this entry is the declaration site of the symbol.
+</ResponseField>
+
+## `DocumentSpan`
+
+Base type shared by definition, reference, and rename entries.
+
+```typescript
+interface DocumentSpan {
+    textSpan: TextSpan;
+    fileName: string;
+    originalTextSpan?: TextSpan;
+    originalFileName?: string;
+    contextSpan?: TextSpan;
+    originalContextSpan?: TextSpan;
+}
+```
+
+## Example: find all references to a function
+
+```typescript
+import * as ts from 'typescript';
+
+// File content:
+// export function formatDate(d: Date): string {
+//     return d.toISOString();
+// }
+// const s = formatDate(new Date());
+// console.log(formatDate(new Date()));
+
+const fileName = '/project/utils.ts';
+const position = 16; // cursor on "formatDate" in the function declaration
+
+const symbols = languageService.findReferences(fileName, position);
+
+if (symbols) {
+    for (const symbol of symbols) {
+        const def = symbol.definition;
+        console.log(
+            `Symbol: ${def.kind} "${def.name}" in ${def.fileName}:${def.textSpan.start}`,
+        );
+        console.log(
+            `Display: ${ts.displayPartsToString(def.displayParts)}`,
+        );
+
+        for (const ref of symbol.references) {
+            console.log(
+                `  ${ref.isDefinition ? '[def]' : '[ref]'}`,
+                `${ref.isWriteAccess ? 'write' : 'read'}`,
+                `${ref.fileName}:${ref.textSpan.start}`,
+            );
+        }
+    }
+}
+
+// Flat variant — useful for highlighting all occurrences in a single file
+const flatRefs = languageService.getReferencesAtPosition(fileName, position);
+console.log('Total references:', flatRefs?.length ?? 0);
+```
+
+<Tip>
+  Use `findReferences` rather than `getReferencesAtPosition` when you need to display references grouped under their definition header, as most reference-panel UIs do.
+</Tip>
