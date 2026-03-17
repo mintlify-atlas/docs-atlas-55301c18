@@ -1,0 +1,142 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "TypeScript",
+  "projectDescription": "TypeScript is a strongly typed programming language that builds on JavaScript, adding optional static types and compiling to clean, readable JavaScript output.",
+  "theme": "linden",
+  "primaryColor": "#040404",
+  "lightColor": null,
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/types-and-interfaces",
+              "concepts/type-inference",
+              "concepts/generics",
+              "concepts/enums",
+              "concepts/decorators",
+              "concepts/modules"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/tsconfig",
+              "configuration/compiler-options",
+              "configuration/project-references",
+              "configuration/module-resolution"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/migrating-from-javascript",
+              "guides/declaration-files",
+              "guides/jsx",
+              "guides/namespaces",
+              "guides/type-compatibility",
+              "guides/utility-types"
+            ]
+          },
+          {
+            "group": "CLI",
+            "pages": [
+              "cli/tsc",
+              "cli/tsserver",
+              "cli/watch-mode",
+              "cli/build-mode"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Compiler API",
+            "pages": [
+              "api/overview",
+              "api/program",
+              "api/type-checker",
+              "api/scanner-and-parser",
+              "api/emitter",
+              "api/diagnostics"
+            ]
+          },
+          {
+            "group": "Language Services API",
+            "pages": [
+              "api/language-service",
+              "api/completions",
+              "api/go-to-definition",
+              "api/find-references",
+              "api/refactoring"
+            ]
+          },
+          {
+            "group": "Utilities",
+            "pages": [
+              "api/factory",
+              "api/module-resolution-api",
+              "api/watch-api"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Static type checking with optional type annotations",
+    "Type inference to reduce annotation boilerplate",
+    "Generics for reusable, type-safe code",
+    "Structural type system (duck typing)",
+    "Interfaces and type aliases for describing shapes",
+    "Enums for named constant sets",
+    "Decorators for metaprogramming",
+    "JSX support for React and other frameworks",
+    "Module and namespace support",
+    "Incremental compilation for large projects",
+    "Watch mode for continuous compilation",
+    "Project references for monorepo setups",
+    "Language Server Protocol (tsserver) for IDE integration",
+    "Declaration file generation (.d.ts)",
+    "Source map support for debugging"
+  ],
+  "publicApiSurface": [
+    "tsc (CLI compiler)",
+    "tsserver (Language Server)",
+    "createProgram()",
+    "createCompilerHost()",
+    "createSourceFile()",
+    "getPreEmitDiagnostics()",
+    "transpileModule()",
+    "createLanguageService()",
+    "parseJsonConfigFileContent()",
+    "createWatchCompilerHost()",
+    "CompilerOptions interface",
+    "Program interface",
+    "TypeChecker interface",
+    "LanguageService interface",
+    "ModuleResolutionHost interface",
+    "ScriptTarget enum",
+    "ModuleKind enum",
+    "SyntaxKind enum",
+    "DiagnosticCategory enum",
+    "Node interface",
+    "SourceFile interface",
+    "Type interface",
+    "Symbol interface"
+  ]
+}
